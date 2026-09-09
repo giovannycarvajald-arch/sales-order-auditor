@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sales Order Auditor — Odessa Separator</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Sales Order Auditor</h1>
+      <p>Odessa Separator Inc. · V1 local audit</p>
+    </div>
+    <div class="privacy-badge">🔒 Local data</div>
+  </header>
+
+  <main class="container">
+    <section class="card hero">
+      <h2>1. Cargar Sales Order</h2>
+      <p>El PDF se procesa en tu navegador. No se envía a un servidor para la auditoría.</p>
+      <label class="dropzone" id="dropzone">
+        <input id="pdfInput" type="file" accept="application/pdf">
+        <span class="drop-icon">📄</span>
+        <strong>Arrastra el PDF aquí</strong>
+        <span>o haz clic para seleccionarlo</span>
+      </label>
+      <div class="file-row">
+        <span id="fileName">Ningún PDF seleccionado</span>
+        <button id="analyzeBtn" class="primary" disabled>🔍 Analizar SO</button>
+      </div>
+      <div id="status" class="status"></div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">
+        <div>
+          <h2>2. Datos extraídos</h2>
+          <p>Puedes corregir un campo si el PDF no lo leyó correctamente.</p>
+        </div>
+        <button id="saveDraftBtn" class="secondary">Guardar borrador local</button>
+      </div>
+      <div class="fields">
+        <label>SO Number<input id="soNumber"></label>
+        <label>Customer<input id="customer"></label>
+        <label>Sold To<input id="soldTo"></label>
+        <label>Ship To<input id="shipTo"></label>
+        <label>Sold To Well<input id="soldToWell"></label>
+        <label>Ship To Well<input id="shipToWell"></label>
+        <label>Contact<input id="contact"></label>
+        <label>Phone<input id="phone"></label>
+        <label>Delivery Date<input id="deliveryDate" type="date"></label>
+        <label>Delivery Time<input id="deliveryTime" type="time"></label>
+        <label>Delivery Text<input id="deliveryText"></label>
+        <label>Stamp / Notes<textarea id="notes" rows="2"></textarea></label>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">
+        <div>
+          <h2>3. Ítems y totales</h2>
+          <p>Los precios se comparan contra la Price List cargada localmente.</p>
+        </div>
+        <button id="addItemBtn" class="secondary">＋ Agregar ítem</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>PN</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>List Price</th><th></th></tr>
+          </thead>
+          <tbody id="itemsBody"></tbody>
+        </table>
+      </div>
+      <div class="totals">
+        <label>Subtotal<input id="subtotal" type="number" step="0.01"></label>
+        <label>Tax<input id="tax" type="number" step="0.01"></label>
+        <label>Total<input id="total" type="number" step="0.01"></label>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">
+        <div>
+          <h2>4. Price List</h2>
+          <p>Carga el Excel de OSI. Se guarda únicamente en este navegador.</p>
+        </div>
+        <label class="file-button">📊 Cargar Excel<input id="xlsxInput" type="file" accept=".xlsx,.xls,.csv"></label>
+      </div>
+      <div id="priceListStatus" class="status"></div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">
+        <div>
+          <h2>5. Resultado de auditoría</h2>
+          <p>Reglas determinísticas de la V1.</p>
+        </div>
+        <button id="auditBtn" class="primary">✅ Ejecutar auditoría</button>
+      </div>
+      <div id="resultBanner" class="result neutral">Carga una SO y ejecuta la auditoría.</div>
+      <div id="results"></div>
+      <div id="suggestions"></div>
+    </section>
+
+    <section class="card">
+      <h2>6. Historial local</h2>
+      <div class="history-actions">
+        <button id="exportHistoryBtn" class="secondary">Exportar historial JSON</button>
+        <button id="clearHistoryBtn" class="danger">Borrar historial local</button>
+      </div>
+      <div id="history"></div>
+    </section>
+  </main>
+
+  <footer>
+    V1 · Sin backend · Sin API key · Datos de auditoría guardados localmente.
+  </footer>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>

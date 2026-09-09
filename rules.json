@@ -1,0 +1,33 @@
+{
+  "taxRate": 0.0825,
+  "taxableCustomers": [
+    "XTO",
+    "BTA",
+    "BTA OIL & GAS",
+    "BURLESON"
+  ],
+  "nonTaxableCustomers": [
+    "COTERRA",
+    "DIAMONDBACK"
+  ],
+  "noDeliveryCustomers": [
+    "SUMMIT"
+  ],
+  "delivery": {
+    "afterHours": 450,
+    "endUser": 350
+  },
+  "inspection": {
+    "trigger": "1014-0142-00",
+    "feePartNumber": "1004-0009-00",
+    "price": 450
+  },
+  "stampRequired": [
+    "XTO"
+  ],
+  "acceptedStampPhrases": [
+    "PLEASE GET STAMPED",
+    "GET STAMP!",
+    "GET THE STAMP!"
+  ]
+}
