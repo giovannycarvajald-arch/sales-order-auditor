@@ -171,56 +171,56 @@ function parseSO(text){
   $("itemsBody").innerHTML="";
   state.items=[];
 
-  // Odessa item parser V1.3:
-  // Some SO rows have a populated Rev column ("0 1 350.00/EA"),
-  // while others leave Rev blank ("1 82.50/EA"). Parse from the
-  // right side so both formats are accepted. Wrapped descriptions
-  // are joined until the /EA + Amount ending is found.
+  // Odessa item parser V1.4
+  // Use the flattened PDF text to find EVERY PN independently. This avoids
+  // losing rows when PDF.js groups a table row with "Ship Dates:" or wraps
+  // the description onto another visual line.
   const itemRows=[];
-  const itemStartRe=/^\s*(\d+)\s+(\d{2,4}-\d{4}-\d{2}(?:-\d{2})?)\s+(.*)$/;
-  const priceEnd=/\s+[\d,]+\.\d{2}\s*\/EA\s+[\d,]+\.\d{2}\s*$/;
+  const pnRegex=/\b\d{2,4}-\d{4}-\d{2}(?:-\d{2})?\b/g;
+  const pnMatches=[...t.matchAll(pnRegex)];
 
-  for(let i=0;i<lines.length;i++){
-    const first=lines[i].match(itemStartRe);
-    if(!first) continue;
+  // Only consider PNs that occur in the item-table area (after the "Ln#
+  // Description..." header and before the return-policy text). This prevents
+  // duplicate PNs elsewhere in the document from becoming items.
+  const tableStart=Math.max(0, t.search(/Ln#\s+Description\s+Rev\s+Quantity\s+Unit Price/i));
+  const tableEnd=t.search(/Return Policy:/i);
+  const itemArea=t.slice(tableStart, tableEnd>tableStart?tableEnd:t.length);
 
-    const lineNo=Number(first[1]);
-    const pn=first[2];
-    let chunk=first[3].trim();
-    let endIndex=i;
+  const areaMatches=[...itemArea.matchAll(pnRegex)];
+  const seen=new Set();
 
-    while(!priceEnd.test(chunk) && endIndex+1<lines.length && endIndex-i<8){
-      const next=lines[endIndex+1].trim();
-      if(itemStartRe.test(next) || /^Ship Dates:/i.test(next) || /^Sales Order$/i.test(next)) break;
-      chunk += " " + next;
-      endIndex++;
-    }
+  areaMatches.forEach((m,idx)=>{
+    const pn=m[0];
+    if(seen.has(pn)) return;
+    seen.add(pn);
 
-    if(!priceEnd.test(chunk)) continue;
+    const startPos=m.index + pn.length;
+    const next=areaMatches[idx+1];
+    const endPos=next ? next.index : itemArea.length;
+    const segment=itemArea.slice(startPos,endPos).replace(/\s+/g," ").trim();
 
-    // Tail is always: Qty UnitPrice/EA Amount.
-    const tail=chunk.match(/^(.*?)\s+(\d+(?:\.\d+)?)\s+([\d,]+\.\d{2})\/EA\s+([\d,]+\.\d{2})\s*$/);
-    if(!tail) continue;
+    // Odessa item ending: Quantity UnitPrice/EA Amount.
+    // Example: "0 1 350.00/EA 350.00" or "1 82.50/EA 82.50".
+    const tail=segment.match(/([\d.]+)\s+([\d,]+\.\d{2})\s*\/EA\s+([\d,]+\.\d{2})\s*$/);
+    if(!tail) return;
 
-    let desc=tail[1].trim();
-    const qty=Number(tail[2]);
-    const price=Number(tail[3].replace(/,/g,""));
-    const amount=Number(tail[4].replace(/,/g,""));
+    const qty=Number(tail[1]);
+    const price=Number(tail[2].replace(/,/g,""));
+    const amount=Number(tail[3].replace(/,/g,""));
 
-    // If Rev is present, it appears immediately before Qty.
-    // Example: "... 0 1 350.00/EA 350.00"
-    const revTail=desc.match(/^(.*)\s+(\d+)$/);
-    if(revTail && Number(revTail[2]) !== qty){
-      desc=revTail[1].trim();
-    }
+    let desc=segment.slice(0,tail.index).trim();
 
-    itemRows.push({lineNo,pn,desc,qty,price,amount});
-    i=endIndex;
-  }
+    // Remove Rev when the table has it immediately before Quantity.
+    // "DESCRIPTION 0 1" -> "DESCRIPTION"
+    const rev=desc.match(/^(.*)\s+(\d+)\s*$/);
+    if(rev && Number(rev[2]) !== qty) desc=rev[1].trim();
+
+    itemRows.push({pn,desc,qty,price,amount});
+  });
 
   itemRows.forEach(x=>addItem(x.pn,x.desc,x.qty,x.price));
   $("status").textContent = `PDF leído: ${itemRows.length} ítem(s) detectado(s). Revisa los campos y ejecuta la auditoría.`;
-  $("status").className="status ok";
+  $("status").className = itemRows.length ? "status ok" : "status bad";
 }
 
 function addItem(pn="",desc="",qty=1,price=""){

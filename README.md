@@ -63,3 +63,6 @@ Improved PDF line reconstruction, Odessa item-row parsing, stacked Total/Tax/Sub
 
 ### V1.3 parser fix
 The item parser supports Odessa rows with or without a populated Rev column and descriptions wrapped across multiple PDF lines. Each item row is parsed independently.
+
+### V1.4 parser fix
+The parser now finds every unique part number inside the Odessa item-table area and parses each item independently from the quantity/unit-price/amount ending. This is designed to handle wrapped descriptions and inconsistent Rev-column population.
