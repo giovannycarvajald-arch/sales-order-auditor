@@ -171,52 +171,52 @@ function parseSO(text){
   $("itemsBody").innerHTML="";
   state.items=[];
 
-  // Odessa item parser V1.4
-  // Use the flattened PDF text to find EVERY PN independently. This avoids
-  // losing rows when PDF.js groups a table row with "Ship Dates:" or wraps
-  // the description onto another visual line.
+  // Odessa item parser V1.5
+  // IMPORTANT: "Ship Dates" appears after each item and can sit between
+  // item rows in the flattened PDF. Therefore each item is parsed from its
+  // own visual line block, not from one giant text segment.
   const itemRows=[];
-  const pnRegex=/\b\d{2,4}-\d{4}-\d{2}(?:-\d{2})?\b/g;
-  const pnMatches=[...t.matchAll(pnRegex)];
+  const itemStartRe=/^\s*(\d+)\s+(\d{2,4}-\d{4}-\d{2}(?:-\d{2})?)\s*(.*)$/;
 
-  // Only consider PNs that occur in the item-table area (after the "Ln#
-  // Description..." header and before the return-policy text). This prevents
-  // duplicate PNs elsewhere in the document from becoming items.
-  const tableStart=Math.max(0, t.search(/Ln#\s+Description\s+Rev\s+Quantity\s+Unit Price/i));
-  const tableEnd=t.search(/Return Policy:/i);
-  const itemArea=t.slice(tableStart, tableEnd>tableStart?tableEnd:t.length);
+  for(let i=0;i<lines.length;i++){
+    const first=lines[i].match(itemStartRe);
+    if(!first) continue;
 
-  const areaMatches=[...itemArea.matchAll(pnRegex)];
-  const seen=new Set();
+    const lineNo=Number(first[1]);
+    const pn=first[2];
+    let block=first[3].trim();
+    let j=i;
 
-  areaMatches.forEach((m,idx)=>{
-    const pn=m[0];
-    if(seen.has(pn)) return;
-    seen.add(pn);
+    // Add wrapped description lines until the price tail is found.
+    // Stop at the next item, Ship Dates, or document headers.
+    const priceRe=/(\d+(?:\.\d+)?)\s+([\d,]+\.\d{2})\s*\/EA\s+([\d,]+\.\d{2})/;
+    while(!priceRe.test(block) && j+1<lines.length && j-i<8){
+      const next=lines[j+1].trim();
+      if(itemStartRe.test(next) || /^Ship Dates:/i.test(next) ||
+         /^Sales Order$/i.test(next) || /^Return Policy:/i.test(next)) break;
+      block += " " + next;
+      j++;
+    }
 
-    const startPos=m.index + pn.length;
-    const next=areaMatches[idx+1];
-    const endPos=next ? next.index : itemArea.length;
-    const segment=itemArea.slice(startPos,endPos).replace(/\s+/g," ").trim();
+    const p=block.match(priceRe);
+    if(!p) continue;
 
-    // Odessa item ending: Quantity UnitPrice/EA Amount.
-    // Example: "0 1 350.00/EA 350.00" or "1 82.50/EA 82.50".
-    const tail=segment.match(/([\d.]+)\s+([\d,]+\.\d{2})\s*\/EA\s+([\d,]+\.\d{2})\s*$/);
-    if(!tail) return;
+    const qty=Number(p[1]);
+    const price=Number(p[2].replace(/,/g,""));
+    const amount=Number(p[3].replace(/,/g,""));
 
-    const qty=Number(tail[1]);
-    const price=Number(tail[2].replace(/,/g,""));
-    const amount=Number(tail[3].replace(/,/g,""));
+    let desc=block.slice(0,p.index).trim();
 
-    let desc=segment.slice(0,tail.index).trim();
+    // When Rev is populated, it is immediately before Qty.
+    // Example: "... 0 1 350.00/EA 350.00" => remove the "0".
+    const rev=desc.match(/^(.*)\s+(\d+)$/);
+    if(rev && Number(rev[2]) !== qty){
+      desc=rev[1].trim();
+    }
 
-    // Remove Rev when the table has it immediately before Quantity.
-    // "DESCRIPTION 0 1" -> "DESCRIPTION"
-    const rev=desc.match(/^(.*)\s+(\d+)\s*$/);
-    if(rev && Number(rev[2]) !== qty) desc=rev[1].trim();
-
-    itemRows.push({pn,desc,qty,price,amount});
-  });
+    itemRows.push({lineNo,pn,desc,qty,price,amount});
+    i=j;
+  }
 
   itemRows.forEach(x=>addItem(x.pn,x.desc,x.qty,x.price));
   $("status").textContent = `PDF leído: ${itemRows.length} ítem(s) detectado(s). Revisa los campos y ejecuta la auditoría.`;

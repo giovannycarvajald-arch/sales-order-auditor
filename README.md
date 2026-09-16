@@ -66,3 +66,6 @@ The item parser supports Odessa rows with or without a populated Rev column and 
 
 ### V1.4 parser fix
 The parser now finds every unique part number inside the Odessa item-table area and parses each item independently from the quantity/unit-price/amount ending. This is designed to handle wrapped descriptions and inconsistent Rev-column population.
+
+### V1.5 parser fix
+The parser now works from the PDF's visual text lines. Each Part Number starts an independent block, wrapped descriptions are joined, and the item is accepted as soon as a `Qty UnitPrice/EA Amount` pattern is found. This avoids the `Ship Dates` text from swallowing the next item's price.
