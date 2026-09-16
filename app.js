@@ -67,37 +67,70 @@ function setValue(id,v){ $(id).value = v ?? ""; }
 async function extractPDFText(file){
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({data:buf}).promise;
-  let text="";
+  const pages=[];
   for(let i=1;i<=pdf.numPages;i++){
     const page=await pdf.getPage(i);
     const content=await page.getTextContent();
-    text += content.items.map(x=>x.str).join(" ") + "\n";
-  }
-  return text.replace(/\u00a0/g," ");
-}
+    const items=content.items.map(x=>({
+      text:x.str || "",
+      x:x.transform?.[4] ?? 0,
+      y:x.transform?.[5] ?? 0
+    })).filter(x=>x.text.trim());
 
+    // Reconstruct visual lines from PDF text positions.
+    const rows=[];
+    for(const item of items){
+      let row=rows.find(r=>Math.abs(r.y-item.y)<3);
+      if(!row){ row={y:item.y,items:[]}; rows.push(row); }
+      row.items.push(item);
+    }
+    rows.sort((a,b)=>b.y-a.y);
+    const lines=rows.map(r=>r.items.sort((a,b)=>a.x-b.x).map(x=>x.text).join(" ").replace(/\s+/g," ").trim());
+    pages.push(lines.join("\n"));
+  }
+  return pages.join("\n");
+}
 function firstMatch(text, regex){
   const m=text.match(regex); return m ? (m[1]||m[0]).trim() : "";
 }
 
 function parseSO(text){
-  const t=text.replace(/\s+/g," ");
+  const lines=text.split(/\r?\n/).map(x=>x.replace(/\s+/g," ").trim()).filter(Boolean);
+  const t=lines.join(" ");
+
   const so=firstMatch(t, /\bSO[-\s]?(\d{4,})\b/i);
-  const phone=firstMatch(t, /(\+?1[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})/);
+
+  // Phone formats seen on Odessa SOs include "+ 1 4322907927".
+  const phone=firstMatch(t, /(\+\s*1\s*\d{10}|\+?1[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})/);
+
   const date=firstMatch(t, /\b(0?[1-9]|1[0-2])[\/\-](0?[1-9]|[12]\d|3[01])[\/\-](20\d{2})\b/);
   const time=firstMatch(t, /\b((?:0?[1-9]|1[0-2]):[0-5]\d\s*(?:AM|PM))\b/i);
 
-  // These patterns are intentionally conservative. Manual correction is available in V1.
-  const customer=firstMatch(t, /(?:Sold To|Customer)\s*[:#-]?\s*([A-Z][A-Z0-9 &.,'\/-]{2,80}?)(?=\s+(?:Ship To|Phone|Contact|Delivery|Date)\b)/i);
-  const shipTo=firstMatch(t, /Ship To\s*[:#-]?\s*([A-Z][A-Z0-9 &.,'\/-]{2,100}?)(?=\s+(?:Phone|Contact|Delivery|Date|Salesperson)\b)/i);
-  const contact=firstMatch(t, /Contact\s*[:#-]?\s*([A-Z][A-Za-z .'-]{2,60})/i);
+  // Use the labels and the next meaningful line rather than a greedy
+  // expression; this matches the actual Odessa PDF structure better.
+  const soldIdx=lines.findIndex(x=>/^Sold To\s*:?\s*$/i.test(x));
+  const shipIdx=lines.findIndex(x=>/^Ship To\s*:?\s*$/i.test(x));
+  const customer=soldIdx>=0 ? (lines[soldIdx+1]||"") : firstMatch(t,/Sold To\s*:?\s*([A-Z][A-Z0-9 &.,'\/-]{2,80})\s+Ship To/i);
+  const shipTo=shipIdx>=0 ? (lines[shipIdx+1]||"") : firstMatch(t,/Ship To\s*:?\s*([A-Z][A-Z0-9 &.,'\/-]{2,100})\s+(?:Delivery|Ticket|Shipping)/i);
+
+  // Ship-to well is normally the line after the Ship To company.
+  let shipToWell="";
+  if(shipIdx>=0){
+    const candidate=lines[shipIdx+2]||"";
+    if(candidate && !/Odessa Separator|^\d{3}-\d{3}-\d{4}|SO\d+/i.test(candidate)) shipToWell=candidate.replace(/,$/,"").trim();
+  }
+
+  const contactLine=lines.find(x=>/^Contact\s*:/i.test(x))||"";
+  const contact=contactLine.replace(/^Contact\s*:\s*/i,"").replace(/\s*-\s*(?:\+\s*1\s*)?\d[\d\s().-]+$/,"").trim();
 
   setValue("soNumber",so);
   setValue("customer",customer);
   setValue("soldTo",customer);
   setValue("shipTo",shipTo);
+  setValue("shipToWell",shipToWell);
   setValue("phone",phone);
   setValue("contact",contact);
+
   if(date){
     const [m,d,y]=date.split(/[\/\-]/);
     setValue("deliveryDate",`${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`);
@@ -107,25 +140,75 @@ function parseSO(text){
     let h=Number(m[1]); if(m[3].toUpperCase()==="PM" && h<12) h+=12; if(m[3].toUpperCase()==="AM" && h===12) h=0;
     setValue("deliveryTime",`${String(h).padStart(2,"0")}:${m[2]}`);
   }
-  setValue("notes", t.includes("PLEASE GET STAMPED") ? "PLEASE GET STAMPED" : t.includes("GET STAMP") ? "GET STAMP" : "");
-  $("status").textContent = "PDF leído. Revisa los campos y luego ejecuta la auditoría.";
-  $("status").className="status ok";
 
-  // Basic numeric extraction; item parsing varies by SO layout, so V1 allows manual correction.
-  const subtotal=firstMatch(t, /Subtotal\s*[:$]?\s*\$?\s*([\d,]+\.\d{2})/i);
-  const tax=firstMatch(t, /(?:Sale Tax|Tax)\s*[:$]?\s*\$?\s*([\d,]+\.\d{2})/i);
-  const total=firstMatch(t, /Total\s*[:$]?\s*\$?\s*([\d,]+\.\d{2})/i);
-  setValue("subtotal",parseMoney(subtotal));
-  setValue("tax",parseMoney(tax));
-  setValue("total",parseMoney(total));
+  const noteText=t;
+  setValue("notes",
+    /PLEASE GET STAMPED/i.test(noteText) ? "PLEASE GET STAMPED" :
+    /GET THE STAMP!/i.test(noteText) ? "GET THE STAMP!" :
+    /GET STAMP!/i.test(noteText) ? "GET STAMP!" : ""
+  );
+
+  // Totals in Odessa PDFs can be stacked vertically:
+  // Total -> amount -> Tax -> amount -> Subtotal -> amount.
+  const totalIdx=lines.findIndex(x=>/^Total\s*$/i.test(x));
+  let totalVal=null, taxVal=null, subtotalVal=null;
+  if(totalIdx>=0){
+    totalVal=parseMoney(lines[totalIdx+1]);
+    for(let i=totalIdx+1;i<Math.min(lines.length,totalIdx+12);i++){
+      if(/^Tax\s*$/i.test(lines[i])) taxVal=parseMoney(lines[i+1]);
+      if(/^Subtotal\s*$/i.test(lines[i])) subtotalVal=parseMoney(lines[i+1]);
+    }
+  }
+  // Fallback for inline formats.
+  if(totalVal==null) totalVal=parseMoney(firstMatch(t, /Total\s*\$?\s*([\d,]+\.\d{2})/i));
+  if(taxVal==null) taxVal=parseMoney(firstMatch(t, /(?:Sale Tax|Tax)\s*\$?\s*([\d,]+\.\d{2})/i));
+  if(subtotalVal==null) subtotalVal=parseMoney(firstMatch(t, /Subtotal\s*\$?\s*([\d,]+\.\d{2})/i));
+
+  setValue("subtotal",subtotalVal);
+  setValue("tax",taxVal);
+  setValue("total",totalVal);
 
   $("itemsBody").innerHTML="";
   state.items=[];
-  // Common PN pattern. We show detected PNs and allow prices/qty editing.
-  const pns=[...new Set([...t.matchAll(/\b\d{2,4}-\d{4}-\d{2}(?:-\d{2})?\b/g)].map(m=>m[0]))];
-  pns.forEach(pn=>addItem(pn));
-}
 
+  // Exact Odessa item-row pattern:
+  // PN + description + Rev + Qty + UnitPrice/EA + Amount.
+  // We intentionally use the /EA marker to distinguish prices from
+  // dimensions such as 2-7/8" and 1-1/4".
+  const itemRows=[];
+  for(const line of lines){
+    const m=line.match(/^(\d+)\s+(\d{2,4}-\d{4}-\d{2}(?:-\d{2})?)\s+(.+?)\s+(\d+)\s+(\d+)\s+([\d,]+\.\d{2})\/EA\s+([\d,]+\.\d{2})$/);
+    if(m){
+      itemRows.push({
+        pn:m[2],
+        desc:m[3].trim(),
+        qty:Number(m[5]),
+        price:Number(m[6].replace(/,/g,""))
+      });
+    }
+  }
+
+  // If a row wraps over multiple PDF lines, reconstruct it by joining
+  // lines between a PN and the next line containing /EA.
+  if(itemRows.length===0){
+    const pnRe=/^\d+\s+(\d{2,4}-\d{4}-\d{2}(?:-\d{2})?)\s+(.+)/;
+    for(let i=0;i<lines.length;i++){
+      const m=lines[i].match(pnRe); if(!m) continue;
+      let chunk=m[2];
+      for(let j=i+1;j<Math.min(lines.length,i+5);j++){
+        chunk+=" "+lines[j];
+        if(/[\d,]+\.\d{2}\/EA\s+[\d,]+\.\d{2}$/.test(chunk)) break;
+      }
+      const z=chunk.match(/^(.+?)\s+(\d+)\s+(\d+)\s+([\d,]+\.\d{2})\/EA\s+([\d,]+\.\d{2})$/);
+      if(z) itemRows.push({pn:m[1],desc:z[1].trim(),qty:Number(z[3]),price:Number(z[4].replace(/,/g,""))});
+    }
+  }
+
+  itemRows.forEach(x=>addItem(x.pn,x.desc,x.qty,x.price));
+
+  $("status").textContent = `PDF leído: ${itemRows.length} ítem(s) detectado(s). Revisa los campos y ejecuta la auditoría.`;
+  $("status").className="status ok";
+}
 function addItem(pn="",desc="",qty=1,price=""){
   const tr=document.createElement("tr");
   tr.innerHTML=`<td><input class="pn" value="${escapeHtml(pn)}"></td>

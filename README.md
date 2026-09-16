@@ -54,3 +54,9 @@ Para máxima privacidad del código, usa repositorio privado. La aplicación sig
 - Exportación a Excel.
 - Tests automáticos con SO ya auditadas.
 - V2 opcional con IA para casos ambiguos, manteniendo cálculos críticos determinísticos.
+
+### V1.1 parser fix
+The item parser now attempts to read unit prices from the PDF text instead of creating detected part numbers with a default price of $0.00. Because PDF layouts can vary, the extracted item values remain editable before auditing.
+
+### V1.2 parser
+Improved PDF line reconstruction, Odessa item-row parsing, stacked Total/Tax/Subtotal parsing, and phone/contact extraction.
