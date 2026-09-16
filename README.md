@@ -78,3 +78,6 @@ The item area no longer ends at "Return Policy". In Odessa multi-page PDFs, Retu
 
 ### V1.8 UI/file-load fix
 The interface now clearly separates "PDF loaded" from "items detected". Selecting or dropping a PDF immediately confirms the filename and size. Clicking Analyze shows processing status and reports separately whether the PDF was successfully read and whether item rows were found.
+
+### V1.9 Price List fix
+The importer now uses the exact Odessa workbook structure: `PN LIST` → `PartNumber`, `Name`, `Pricing_UnitPrice0`. It no longer guesses the first numeric value in a row. Price lookups are exact normalized Part Number matches, and the loaded Price List is persisted locally in the browser.
