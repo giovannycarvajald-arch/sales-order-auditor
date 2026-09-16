@@ -60,3 +60,6 @@ The item parser now attempts to read unit prices from the PDF text instead of cr
 
 ### V1.2 parser
 Improved PDF line reconstruction, Odessa item-row parsing, stacked Total/Tax/Subtotal parsing, and phone/contact extraction.
+
+### V1.3 parser fix
+The item parser supports Odessa rows with or without a populated Rev column and descriptions wrapped across multiple PDF lines. Each item row is parsed independently.
