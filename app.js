@@ -171,52 +171,49 @@ function parseSO(text){
   $("itemsBody").innerHTML="";
   state.items=[];
 
-  // Odessa item parser V1.5
-  // IMPORTANT: "Ship Dates" appears after each item and can sit between
-  // item rows in the flattened PDF. Therefore each item is parsed from its
-  // own visual line block, not from one giant text segment.
+  // Odessa item parser V1.6
+  // Do NOT require the line to start with "Ln# + PN". PDF.js can position
+  // the line number and PN as separate text runs. Instead, locate every PN
+  // globally inside the item-table text and parse the first Qty/UnitPrice/EA
+  // Amount pattern that follows it.
   const itemRows=[];
-  const itemStartRe=/^\s*(\d+)\s+(\d{2,4}-\d{4}-\d{2}(?:-\d{2})?)\s*(.*)$/;
+  const pnRegex=/\b\d{2,4}-\d{4}-\d{2}(?:-\d{2})?\b/g;
+  // In Odessa PDFs the "Return Policy" block is on page 1 BEFORE the
+  // actual item rows on page 2. Therefore it cannot be used as item-table end.
+  // Start at the first table header, then scan the rest of the document.
+  const tableStart=t.search(/Ln#\s+Description\s+Rev\s+Quantity\s+Unit Price/i);
+  const from=tableStart>=0 ? tableStart : 0;
+  const itemArea=t.slice(from);
+  const pns=[...itemArea.matchAll(pnRegex)];
+  const seen=new Set();
 
-  for(let i=0;i<lines.length;i++){
-    const first=lines[i].match(itemStartRe);
-    if(!first) continue;
+  pns.forEach((m,idx)=>{
+    const pn=m[0];
+    if(seen.has(pn)) return;
+    seen.add(pn);
 
-    const lineNo=Number(first[1]);
-    const pn=first[2];
-    let block=first[3].trim();
-    let j=i;
+    const next=pns[idx+1];
+    const segment=itemArea.slice(m.index + pn.length, next ? next.index : itemArea.length)
+      .replace(/\s+/g," ").trim();
 
-    // Add wrapped description lines until the price tail is found.
-    // Stop at the next item, Ship Dates, or document headers.
-    const priceRe=/(\d+(?:\.\d+)?)\s+([\d,]+\.\d{2})\s*\/EA\s+([\d,]+\.\d{2})/;
-    while(!priceRe.test(block) && j+1<lines.length && j-i<8){
-      const next=lines[j+1].trim();
-      if(itemStartRe.test(next) || /^Ship Dates:/i.test(next) ||
-         /^Sales Order$/i.test(next) || /^Return Policy:/i.test(next)) break;
-      block += " " + next;
-      j++;
-    }
+    // First occurrence after the PN is the item's Qty / Unit Price / Amount.
+    // This intentionally does not require it to be at the end of the segment,
+    // because "Ship Dates" follows every item in the Odessa PDF.
+    const priceMatch=segment.match(/(?:^|\s)(\d+(?:\.\d+)?)\s+([\d,]+\.\d{2})\s*\/EA\s+([\d,]+\.\d{2})(?:\s|$)/);
+    if(!priceMatch) return;
 
-    const p=block.match(priceRe);
-    if(!p) continue;
+    const qty=Number(priceMatch[1]);
+    const price=Number(priceMatch[2].replace(/,/g,""));
+    const amount=Number(priceMatch[3].replace(/,/g,""));
 
-    const qty=Number(p[1]);
-    const price=Number(p[2].replace(/,/g,""));
-    const amount=Number(p[3].replace(/,/g,""));
+    let desc=segment.slice(0,priceMatch.index + (priceMatch[0].match(/^\s*/)?.[0].length||0)).trim();
 
-    let desc=block.slice(0,p.index).trim();
+    // Remove Rev immediately before Qty when present.
+    const rev=desc.match(/^(.*)\s+(\d+)\s*$/);
+    if(rev && Number(rev[2]) !== qty) desc=rev[1].trim();
 
-    // When Rev is populated, it is immediately before Qty.
-    // Example: "... 0 1 350.00/EA 350.00" => remove the "0".
-    const rev=desc.match(/^(.*)\s+(\d+)$/);
-    if(rev && Number(rev[2]) !== qty){
-      desc=rev[1].trim();
-    }
-
-    itemRows.push({lineNo,pn,desc,qty,price,amount});
-    i=j;
-  }
+    itemRows.push({pn,desc,qty,price,amount});
+  });
 
   itemRows.forEach(x=>addItem(x.pn,x.desc,x.qty,x.price));
   $("status").textContent = `PDF leído: ${itemRows.length} ítem(s) detectado(s). Revisa los campos y ejecuta la auditoría.`;

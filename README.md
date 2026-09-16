@@ -69,3 +69,12 @@ The parser now finds every unique part number inside the Odessa item-table area 
 
 ### V1.5 parser fix
 The parser now works from the PDF's visual text lines. Each Part Number starts an independent block, wrapped descriptions are joined, and the item is accepted as soon as a `Qty UnitPrice/EA Amount` pattern is found. This avoids the `Ship Dates` text from swallowing the next item's price.
+
+### V1.6 parser fix
+The item detector no longer requires the line number and Part Number to be in the same PDF.js visual line. It finds every unique Part Number in the item-table area and parses the first quantity/unit-price/amount pattern after that PN. This addresses PDFs where PDF.js separates table columns into different text runs.
+
+### V1.7 parser fix
+The item area no longer ends at "Return Policy". In Odessa multi-page PDFs, Return Policy is printed before the actual item rows, so the previous boundary produced zero detected items. V1.7 scans from the first item-table header through the rest of the document and deduplicates Part Numbers.
+
+### V1.8 UI/file-load fix
+The interface now clearly separates "PDF loaded" from "items detected". Selecting or dropping a PDF immediately confirms the filename and size. Clicking Analyze shows processing status and reports separately whether the PDF was successfully read and whether item rows were found.
