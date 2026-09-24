@@ -240,23 +240,49 @@ function updateListPriceRow(e){
   const p=state.priceList.get(pn);
   tr.querySelector(".listPrice").textContent=p==null?"—":money(p);
 }
+const PN_REGEX=/^\s*\d{2,4}-\d{4}-\d{2}(?:-\d{2})?\s*$/;
+
 function loadPriceList(e){
   const file=e.target.files[0]; if(!file)return;
   const reader=new FileReader();
   reader.onload=ev=>{
     try{
       const wb=XLSX.read(ev.target.result,{type:"array"});
-      const sheet=wb.Sheets[wb.SheetNames[0]];
+      const sheetName=wb.SheetNames.find(n=>normalize(n)==="PN LIST") || wb.SheetNames[0];
+      const sheet=wb.Sheets[sheetName];
       const rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:""});
       const map=new Map();
-      rows.forEach(row=>{
-        const pn=row.find(x=>/^\s*\d{2,4}-\d{4}-\d{2}(?:-\d{2})?\s*$/.test(String(x)));
-        if(pn){
-          const idx=row.indexOf(pn);
-          const candidates=row.slice(idx+1).map(parseMoney).filter(x=>x!=null);
-          if(candidates.length) map.set(normalize(pn),candidates[0]);
+
+      // Prefer matching by header names ("PartNumber" / "Pricing_UnitPrice0"),
+      // since the Name/description column commonly contains numbers (dimensions,
+      // model numbers) that a positional "first number after the PN" scan would
+      // wrongly pick up as the price.
+      const header=rows[0]||[];
+      const pnCol=header.findIndex(h=>normalize(h)==="PARTNUMBER");
+      const priceCol=header.findIndex(h=>normalize(h)==="PRICING_UNITPRICE0");
+
+      if(pnCol>=0 && priceCol>=0){
+        for(let i=1;i<rows.length;i++){
+          const row=rows[i];
+          const pn=row[pnCol];
+          if(PN_REGEX.test(String(pn))){
+            const price=parseMoney(row[priceCol]);
+            if(price!=null) map.set(normalize(pn),price);
+          }
         }
-      });
+      } else {
+        // Fallback for workbooks without the expected headers: guess the
+        // price as the first numeric value after the PN cell.
+        rows.forEach(row=>{
+          const pn=row.find(x=>PN_REGEX.test(String(x)));
+          if(pn){
+            const idx=row.indexOf(pn);
+            const candidates=row.slice(idx+1).map(parseMoney).filter(x=>x!=null);
+            if(candidates.length) map.set(normalize(pn),candidates[0]);
+          }
+        });
+      }
+
       state.priceList=map;
       localStorage.setItem("soPriceList",JSON.stringify([...map.entries()]));
       document.querySelectorAll(".pn").forEach(x=>updateListPriceRow({target:x}));
