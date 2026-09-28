@@ -6,6 +6,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 const $ = id => document.getElementById(id);
 const state = { pdfFile:null, priceList:new Map(), items:[], procedureFile:null, procedureRules:null };
 
+const PN_REGEX = /^\d{2,4}-\d{4}-\d{2}(?:-\d{2})?$/;
+
 const RULES = {
   taxRate: 0.0825,
   taxableCustomers: ["XTO", "BTA", "BTA OIL & GAS", "BURLESON"],
@@ -336,9 +338,12 @@ function procedureCustomerMatch(customer, entry){
   // EXXON MOBIL (ALL EXXON ORDERS WILL BE XTO)
   // means every SO issued as XTO must inherit the Exxon TAXABLE/STAMP rule.
   // We deliberately normalize common XTO legal-name variants here.
-  const isXTO = /\bXTO(?:\s+ENERGY)?(?:\s+INC(?:ORPORATED)?\.?|\s+LLC)?\b/.test(c) || c.includes("XTO");
+  const isXTO = c.includes("XTO");
   const isExxonAlias = e.includes("EXXON MOBIL") && e.includes("ALL EXXON ORDERS WILL BE XTO");
-  if(isExxonAlias) return isXTO || c.includes("EXXON MOBIL");
+  // REV020 explicitly says: "ALL EXXON ORDERS WILL BE XTO".
+  // Therefore an SO issued to XTO inherits the EXXON MOBIL TAXABLE/STAMP rule.
+  if(isExxonAlias && isXTO) return true;
+  if(isExxonAlias && c.includes("EXXON MOBIL")) return true;
 
   if(e==="ALL PUMP SHOPS") return /PUMP SHOP/.test(c);
   return c===e || c.includes(e) || e.includes(c);
@@ -460,21 +465,28 @@ function runAudit(){
   let priceOK=true, priceMissing=[];
   d.items.forEach(x=>{
     const lp=state.priceList.get(normalize(x.pn));
-    if(lp!=null && Math.abs(lp-x.price)>0.01){priceOK=false;priceMissing.push(`${x.pn}: SO ${money(x.price)} vs lista ${money(lp)}`);}
+    if(lp==null){ priceOK=false; priceMissing.push(`${x.pn}: PN NOT FOUND IN PRICE LIST`); }
+    else if(Math.abs(Number(lp)-Number(x.price))>0.01){priceOK=false;priceMissing.push(`${x.pn}: SO ${money(x.price)} vs lista ${money(lp)}`);}
   });
-  addResult(r,"Precios vs Excel",priceOK,state.priceList.size? (priceMissing.length?priceMissing.join(" | "):"Precios coinciden con la Price List cargada."):"Price List no cargada; no se puede verificar contra Excel.");
+  const priceListReady=state.priceList.size>0;
+  const priceResultOK=priceListReady && priceOK;
+  addResult(r,"Precios vs Excel",priceResultOK,priceListReady ? (priceMissing.length?priceMissing.join(" | "):"Precios coinciden con la Price List cargada."):"ERROR: Price List no cargada; no se puede verificar contra Excel.");
   if(!state.priceList.size) suggestions.push("Carga tu OSI LIST PRICE para activar la verificación de precios.");
 
   const procedureReady=!!state.procedureRules;
   let taxOK=true, taxDetail="";
+  const xtoViaExxonRule = procedureReady && customerKey(d.customer)==="XTO" &&
+    state.procedureRules.taxable.some(x=>normalize(x).includes("EXXON MOBIL") && normalize(x).includes("ALL EXXON ORDERS WILL BE XTO"));
+  // XTO is the operational name used for all Exxon orders per REV020.
+  // Treat XTO as TAXABLE when the procedure is loaded; the explicit Exxon alias
+  // is retained as the documented reason when present.
   const taxableRequired=procedureReady && (
-    procedureHas(d.customer,state.procedureRules.taxable) ||
-    (customerKey(d.customer)==="XTO" && state.procedureRules.taxable.some(x=>/EXXON MOBIL.*ALL EXXON ORDERS WILL BE XTO/i.test(x)))
+    procedureHas(d.customer,state.procedureRules.taxable) || customerKey(d.customer)==="XTO"
   );
   const expectedTax=Math.round(d.subtotal*0.0825*100)/100;
   if(taxableRequired){
     taxOK=Math.abs(d.tax-expectedTax)<=0.01;
-    const taxRuleNote = (customerKey(d.customer)==="XTO" && state.procedureRules.taxable.some(x=>/EXXON MOBIL.*ALL EXXON ORDERS WILL BE XTO/i.test(x)))
+    const taxRuleNote = xtoViaExxonRule
       ? " (EXXON MOBIL en el Procedure aplica a XTO: ALL EXXON ORDERS WILL BE XTO)"
       : "";
     taxDetail=`Procedure: ${state.procedureRules.version} marca ${d.customer} como TAXABLE → Tax esperado 8.25%: ${money(expectedTax)}.${taxRuleNote}`;
@@ -488,8 +500,7 @@ function runAudit(){
   addResult(r,"Cálculo de TAXES",taxOK,taxDetail);
 
   const stampRequired=procedureReady ? (
-    procedureHas(d.customer,state.procedureRules.stamp) ||
-    (customerKey(d.customer)==="XTO" && state.procedureRules.stamp.some(x=>/EXXON MOBIL.*ALL EXXON ORDERS WILL BE XTO/i.test(x)))
+    procedureHas(d.customer,state.procedureRules.stamp) || customerKey(d.customer)==="XTO"
   ) : false;
   const stampOK=procedureReady ? (!stampRequired || hasPhrase(d.notes,["PLEASE GET STAMPED","GET STAMP!","GET THE STAMP!"])) : false;
   addResult(r,"Frase STAMP",stampOK,
