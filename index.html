@@ -12,7 +12,7 @@
   <header class="topbar">
     <div>
       <h1>Sales Order Auditor</h1>
-      <p>Odessa Separator Inc. · V1 local audit</p>
+      <p>Odessa Separator Inc. · Auditoría local con reglas del Procedure</p>
     </div>
     <div class="privacy-badge">🔒 Local data</div>
   </header>
@@ -69,7 +69,7 @@
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>PN</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>List Price</th><th></th></tr>
+            <tr><th>PN</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Disc%</th><th>List Price</th><th></th></tr>
           </thead>
           <tbody id="itemsBody"></tbody>
         </table>
@@ -84,7 +84,19 @@
     <section class="card">
       <div class="section-title">
         <div>
-          <h2>4. Price List</h2>
+          <h2>4. Sales Order Procedure</h2>
+          <p>Carga el PDF del procedure vigente. La aplicación extrae automáticamente las listas TAXABLE, STAMP y DISCOUNT de la sección de la página 22 y las guarda localmente.</p>
+        </div>
+        <label class="file-button">📘 Cargar Procedure<input id="procedureInput" type="file" accept="application/pdf"></label>
+      </div>
+      <div id="procedureStatus" class="status"></div>
+      <div class="small" style="margin-top:8px;">La última versión cargada queda guardada en este navegador y se puede reemplazar cargando un nuevo procedure.</div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">
+        <div>
+          <h2>5. Price List</h2>
           <p>Carga el Excel de OSI. Se guarda únicamente en este navegador.</p>
         </div>
         <label class="file-button">📊 Cargar Excel<input id="xlsxInput" type="file" accept=".xlsx,.xls,.csv"></label>
@@ -95,8 +107,8 @@
     <section class="card">
       <div class="section-title">
         <div>
-          <h2>5. Resultado de auditoría</h2>
-          <p>Reglas determinísticas de la V1.</p>
+          <h2>6. Resultado de auditoría</h2>
+          <p>Reglas determinísticas + reglas dinámicas del Procedure cargado.</p>
         </div>
         <button id="auditBtn" class="primary">✅ Ejecutar auditoría</button>
       </div>
@@ -106,7 +118,7 @@
     </section>
 
     <section class="card">
-      <h2>6. Historial local</h2>
+      <h2>7. Historial local</h2>
       <div class="history-actions">
         <button id="exportHistoryBtn" class="secondary">Exportar historial JSON</button>
         <button id="clearHistoryBtn" class="danger">Borrar historial local</button>
@@ -116,7 +128,7 @@
   </main>
 
   <footer>
-    V1 · Sin backend · Sin API key · Datos de auditoría guardados localmente.
+    V2 · Sin backend · Sin API key · Procedure, Price List y datos de auditoría guardados localmente.
   </footer>
 
   <script src="app.js" type="module"></script>

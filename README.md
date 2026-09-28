@@ -81,3 +81,15 @@ The interface now clearly separates "PDF loaded" from "items detected". Selectin
 
 ### V1.9 Price List fix
 The importer now uses the exact Odessa workbook structure: `PN LIST` → `PartNumber`, `Name`, `Pricing_UnitPrice0`. It no longer guesses the first numeric value in a row. Price lookups are exact normalized Part Number matches, and the loaded Price List is persisted locally in the browser.
+
+### V2.1 Procedure-driven audit + Price List correction
+Price List loading now strictly uses `PN LIST` and the `Pricing_UnitPrice0` column. It no longer guesses numeric cells. The app uses a versioned local-storage key so stale mappings from earlier versions cannot override the newly loaded Price List. Missing PNs are explicitly reported as `PN NOT FOUND IN PRICE LIST`.
+
+
+### V2.1 changes
+- Added a local PDF uploader for the current Sales Order Procedure.
+- The app reads the section **7. INFORMATION TO CONSIDER WHEN CREATING THE SALES ORDER** and extracts the `TAXABLE`, `STAMP`, and `DISCOUNT` lists from the procedure (the current REV20 lists are on page 22).
+- Procedure rules are stored in browser `localStorage` and are replaced when a newer procedure is uploaded.
+- Tax, STAMP, and discount checks use the loaded procedure instead of the old hardcoded customer lists.
+- Added a `Disc%` column to SO items so procedure discounts can be verified line-by-line. Delivery and inspection charges are excluded from the customer discount check.
+- Price List loading is strict: sheet `PN LIST`, columns `PartNumber` and `Pricing_UnitPrice0`, stored under versioned `soPriceList_v2` local storage.

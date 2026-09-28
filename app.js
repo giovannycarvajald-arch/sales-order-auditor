@@ -4,7 +4,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
 
 const $ = id => document.getElementById(id);
-const state = { pdfFile:null, priceList:new Map(), items:[] };
+const state = { pdfFile:null, priceList:new Map(), items:[], procedureFile:null, procedureRules:null };
 
 const RULES = {
   taxRate: 0.0825,
@@ -38,6 +38,7 @@ $("analyzeBtn").onclick = analyzePDF;
 $("auditBtn").onclick = runAudit;
 $("addItemBtn").onclick = () => addItem();
 $("xlsxInput").onchange = loadPriceList;
+$("procedureInput").onchange = loadProcedure;
 $("saveDraftBtn").onclick = saveDraft;
 $("exportHistoryBtn").onclick = exportHistory;
 $("clearHistoryBtn").onclick = () => {
@@ -199,12 +200,13 @@ function parseSO(text){
     // First occurrence after the PN is the item's Qty / Unit Price / Amount.
     // This intentionally does not require it to be at the end of the segment,
     // because "Ship Dates" follows every item in the Odessa PDF.
-    const priceMatch=segment.match(/(?:^|\s)(\d+(?:\.\d+)?)\s+([\d,]+\.\d{2})\s*\/EA\s+([\d,]+\.\d{2})(?:\s|$)/);
+    const priceMatch=segment.match(/(?:^|\s)(\d+(?:\.\d+)?)\s+([\d,]+\.\d{2})\s*\/EA(?:\s+(\d+(?:\.\d+)?)(?:%)?)?\s+([\d,]+\.\d{2})(?:\s|$)/);
     if(!priceMatch) return;
 
     const qty=Number(priceMatch[1]);
     const price=Number(priceMatch[2].replace(/,/g,""));
-    const amount=Number(priceMatch[3].replace(/,/g,""));
+    const discount=priceMatch[3]==null?0:Number(priceMatch[3]);
+    const amount=Number(priceMatch[4].replace(/,/g,""));
 
     let desc=segment.slice(0,priceMatch.index + (priceMatch[0].match(/^\s*/)?.[0].length||0)).trim();
 
@@ -212,20 +214,21 @@ function parseSO(text){
     const rev=desc.match(/^(.*)\s+(\d+)\s*$/);
     if(rev && Number(rev[2]) !== qty) desc=rev[1].trim();
 
-    itemRows.push({pn,desc,qty,price,amount});
+    itemRows.push({pn,desc,qty,price,amount,discount});
   });
 
-  itemRows.forEach(x=>addItem(x.pn,x.desc,x.qty,x.price));
+  itemRows.forEach(x=>addItem(x.pn,x.desc,x.qty,x.price,x.discount));
   $("status").textContent = `PDF leído: ${itemRows.length} ítem(s) detectado(s). Revisa los campos y ejecuta la auditoría.`;
   $("status").className = itemRows.length ? "status ok" : "status bad";
 }
 
-function addItem(pn="",desc="",qty=1,price=""){
+function addItem(pn="",desc="",qty=1,price="",discount=""){
   const tr=document.createElement("tr");
   tr.innerHTML=`<td><input class="pn" value="${escapeHtml(pn)}"></td>
     <td><input class="desc" value="${escapeHtml(desc)}"></td>
     <td><input class="qty" type="number" min="0" step="1" value="${qty}"></td>
     <td><input class="price" type="number" min="0" step="0.01" value="${price}"></td>
+    <td><input class="discount" type="number" min="0" max="100" step="0.01" value="${discount}"></td>
     <td class="listPrice">—</td>
     <td><button class="danger remove">✕</button></td>`;
   tr.querySelector(".remove").onclick=()=>tr.remove();
@@ -240,63 +243,144 @@ function updateListPriceRow(e){
   const p=state.priceList.get(pn);
   tr.querySelector(".listPrice").textContent=p==null?"—":money(p);
 }
-const PN_REGEX=/^\s*\d{2,4}-\d{4}-\d{2}(?:-\d{2})?\s*$/;
-
 function loadPriceList(e){
-  const file=e.target.files[0]; if(!file)return;
+  const file=e.target.files && e.target.files[0]; if(!file)return;
   const reader=new FileReader();
   reader.onload=ev=>{
     try{
-      const wb=XLSX.read(ev.target.result,{type:"array"});
-      const sheetName=wb.SheetNames.find(n=>normalize(n)==="PN LIST") || wb.SheetNames[0];
-      const sheet=wb.Sheets[sheetName];
-      const rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:""});
+      const wb=XLSX.read(ev.target.result,{type:"array",raw:true});
+      const sheetName=wb.SheetNames.find(n=>normalize(n)==="PN LIST");
+      if(!sheetName) throw new Error(`No se encontró la hoja "PN LIST". Hojas: ${wb.SheetNames.join(", ")}`);
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{defval:"",raw:true});
+      if(!rows.length) throw new Error("La hoja PN LIST está vacía.");
+      const keys=Object.keys(rows[0]);
+      const pnKey=keys.find(k=>normalize(k)==="PARTNUMBER");
+      const priceKey=keys.find(k=>normalize(k)==="PRICING_UNITPRICE0");
+      if(!pnKey || !priceKey) throw new Error("La hoja PN LIST debe contener PartNumber y Pricing_UnitPrice0.");
       const map=new Map();
-
-      // Prefer matching by header names ("PartNumber" / "Pricing_UnitPrice0"),
-      // since the Name/description column commonly contains numbers (dimensions,
-      // model numbers) that a positional "first number after the PN" scan would
-      // wrongly pick up as the price.
-      const header=rows[0]||[];
-      const pnCol=header.findIndex(h=>normalize(h)==="PARTNUMBER");
-      const priceCol=header.findIndex(h=>normalize(h)==="PRICING_UNITPRICE0");
-
-      if(pnCol>=0 && priceCol>=0){
-        for(let i=1;i<rows.length;i++){
-          const row=rows[i];
-          const pn=row[pnCol];
-          if(PN_REGEX.test(String(pn))){
-            const price=parseMoney(row[priceCol]);
-            if(price!=null) map.set(normalize(pn),price);
-          }
-        }
-      } else {
-        // Fallback for workbooks without the expected headers: guess the
-        // price as the first numeric value after the PN cell.
-        rows.forEach(row=>{
-          const pn=row.find(x=>PN_REGEX.test(String(x)));
-          if(pn){
-            const idx=row.indexOf(pn);
-            const candidates=row.slice(idx+1).map(parseMoney).filter(x=>x!=null);
-            if(candidates.length) map.set(normalize(pn),candidates[0]);
-          }
-        });
-      }
-
+      rows.forEach(row=>{
+        const pn=normalize(row[pnKey]);
+        if(!PN_REGEX.test(pn)) return;
+        const raw=row[priceKey];
+        const price=typeof raw==="number" ? raw : parseMoney(raw);
+        if(price!=null && Number.isFinite(price)) map.set(pn,price);
+      });
+      if(!map.size) throw new Error("No se encontraron precios válidos en Pricing_UnitPrice0.");
       state.priceList=map;
-      localStorage.setItem("soPriceList",JSON.stringify([...map.entries()]));
+      localStorage.setItem("soPriceList_v2",JSON.stringify([...map.entries()]));
+      localStorage.setItem("soPriceListMeta_v2",JSON.stringify({fileName:file.name,sheetName,pnKey,priceKey,count:map.size}));
+      localStorage.removeItem("soPriceList");
       document.querySelectorAll(".pn").forEach(x=>updateListPriceRow({target:x}));
-      $("priceListStatus").textContent=`Price List cargada: ${map.size} part numbers.`;
+      $("priceListStatus").textContent=`🟢 Price List cargada: ${map.size.toLocaleString()} PN | Hoja: ${sheetName} | ${priceKey}`;
       $("priceListStatus").className="status ok";
-    }catch(err){ $("priceListStatus").textContent="No se pudo leer el Excel: "+err.message; $("priceListStatus").className="status bad"; }
+    }catch(err){ $("priceListStatus").textContent="❌ No se pudo leer el Excel: "+err.message; $("priceListStatus").className="status bad"; }
   };
   reader.readAsArrayBuffer(file);
 }
+
 function restorePriceList(){
-  try{ state.priceList=new Map(JSON.parse(localStorage.getItem("soPriceList")||"[]")); }
-  catch{ state.priceList=new Map(); }
-  $("priceListStatus").textContent=state.priceList.size?`Price List local disponible: ${state.priceList.size} part numbers.`:"No hay Price List cargada todavía.";
+  try{
+    const raw=localStorage.getItem("soPriceList_v2");
+    state.priceList=raw?new Map(JSON.parse(raw)):new Map();
+    const meta=JSON.parse(localStorage.getItem("soPriceListMeta_v2")||"null");
+    $("priceListStatus").textContent=state.priceList.size
+      ? `🟢 Price List local disponible: ${state.priceList.size.toLocaleString()} PN${meta?.sheetName?` | ${meta.sheetName}`:""}`
+      : "No hay Price List cargada todavía.";
+    $("priceListStatus").className=state.priceList.size?"status ok":"status";
+  }catch{ state.priceList=new Map(); $("priceListStatus").textContent="No hay Price List cargada todavía."; }
 }
+
+function cleanProcedureName(s){
+  return normalize(String(s||"").replace(/[•\r\n]+/g," ").replace(/\s+/g," ").replace(/[.;]+$/g,"").trim());
+}
+
+function parseProcedureLists(text){
+  const n=normalize(text);
+  const heading="7. INFORMATION TO CONSIDER WHEN CREATING THE SALES ORDER";
+  const start=n.lastIndexOf(heading);
+  const source=start>=0 ? n.slice(start) : n;
+  const m=source.match(/TAXABLE\s+([\s\S]*?)\s+STAMP\s+([\s\S]*?)\s+DISCOUNT\s+([\s\S]*?)\s+CONFIRMATION CHECK/);
+  if(!m) throw new Error("No se encontraron las secciones TAXABLE, STAMP, DISCOUNT y CONFIRMATION CHECK en el procedure.");
+
+  const taxable=m[1].split(",").map(cleanProcedureName).filter(Boolean);
+  const stamp=m[2].split(",").map(cleanProcedureName).filter(Boolean);
+
+  const discounts=[];
+  const discountText=m[3];
+  const pctRe=/\((\d+(?:\.\d+)?)%\)/g;
+  let pm, lastEnd=0;
+  while((pm=pctRe.exec(discountText))){
+    const before=discountText.slice(lastEnd,pm.index);
+    const comma=before.lastIndexOf(",");
+    const rawName=before.slice(comma+1).trim();
+    const name=cleanProcedureName(rawName);
+    if(name) discounts.push({name,percent:Number(pm[1])});
+    lastEnd=pm.index+pm[0].length;
+  }
+  // REV20 contains one discount written without parentheses: THRU TUBING 25%.
+  const noParen=[...discountText.matchAll(/(?:^|,|\s)(THRU TUBING)\s+(\d+(?:\.\d+)?)%/g)];
+  noParen.forEach(x=>discounts.push({name:cleanProcedureName(x[1]),percent:Number(x[2])}));
+  // De-duplicate while preserving the first occurrence.
+  const seenDiscount=new Set();
+  const uniqueDiscounts=discounts.filter(x=>{ const k=`${x.name}|${x.percent}`; if(seenDiscount.has(k)) return false; seenDiscount.add(k); return true; });
+
+  const rev=(source.match(/\bREV\s+(\d+)\b/)||[])[1] || "20";
+  return {version:`REV ${rev}`, taxable, stamp, discounts:uniqueDiscounts, loadedAt:new Date().toISOString()};
+}
+
+function procedureCustomerMatch(customer, entry){
+  const c=normalize(customer), e=normalize(entry);
+  if(!c || !e) return false;
+  if(e==="ALL PUMP SHOPS") return /PUMP SHOP/.test(c);
+  if(e==="EXXON MOBIL (ALL EXXON ORDERS WILL BE XTO)") return c.includes("EXXON") || c.includes("XTO");
+  return c===e || c.includes(e) || e.includes(c);
+}
+
+function findProcedureDiscount(customer){
+  const p=state.procedureRules;
+  if(!p) return null;
+  return p.discounts.find(x=>procedureCustomerMatch(customer,x.name)) || null;
+}
+function procedureHas(customer, list){
+  return !!(list||[]).find(x=>procedureCustomerMatch(customer,x));
+}
+
+async function loadProcedure(e){
+  const file=e.target.files && e.target.files[0];
+  if(!file) return;
+  try{
+    const text=await extractPDFText(file);
+    const rules=parseProcedureLists(text);
+    state.procedureFile=file;
+    state.procedureRules=rules;
+    localStorage.setItem("soaProcedureRules_v1",JSON.stringify(rules));
+    localStorage.setItem("soaProcedureMeta_v1",JSON.stringify({fileName:file.name,loadedAt:rules.loadedAt,version:rules.version}));
+    const total=rules.taxable.length+rules.stamp.length+rules.discounts.length;
+    $("procedureStatus").textContent=`🟢 Procedure cargado: ${file.name} | ${rules.version} | ${total} reglas (${rules.taxable.length} taxable, ${rules.stamp.length} stamp, ${rules.discounts.length} discount)`;
+    $("procedureStatus").className="status ok";
+  }catch(err){
+    state.procedureRules=null;
+    $("procedureStatus").textContent="❌ No se pudo leer el procedure: "+err.message;
+    $("procedureStatus").className="status bad";
+  }
+}
+
+function restoreProcedure(){
+  try{
+    const raw=localStorage.getItem("soaProcedureRules_v1");
+    if(raw){
+      state.procedureRules=JSON.parse(raw);
+      const meta=JSON.parse(localStorage.getItem("soaProcedureMeta_v1")||"null");
+      const p=state.procedureRules;
+      $("procedureStatus").textContent=`🟢 Procedure local disponible${meta?.fileName?` | ${meta.fileName}`:""} | ${p.taxable.length} taxable · ${p.stamp.length} stamp · ${p.discounts.length} discount`;
+      $("procedureStatus").className="status ok";
+      return;
+    }
+  }catch{}
+  $("procedureStatus").textContent="Carga el Sales Order Procedure para activar las reglas dinámicas.";
+  $("procedureStatus").className="status";
+}
+
 async function analyzePDF(){
   $("status").textContent="Leyendo PDF…"; $("status").className="status";
   try{ parseSO(await extractPDFText(state.pdfFile)); }
@@ -308,7 +392,8 @@ function getData(){
     pn:tr.querySelector(".pn").value.trim(),
     desc:tr.querySelector(".desc").value.trim(),
     qty:Number(tr.querySelector(".qty").value||0),
-    price:Number(tr.querySelector(".price").value||0)
+    price:Number(tr.querySelector(".price").value||0),
+    discount:Number(tr.querySelector(".discount")?.value||0)
   })).filter(x=>x.pn);
   return {
     so:$("soNumber").value.trim(), customer:$("customer").value.trim(),
@@ -365,15 +450,44 @@ function runAudit(){
   addResult(r,"Precios vs Excel",priceOK,state.priceList.size? (priceMissing.length?priceMissing.join(" | "):"Precios coinciden con la Price List cargada."):"Price List no cargada; no se puede verificar contra Excel.");
   if(!state.priceList.size) suggestions.push("Carga tu OSI LIST PRICE para activar la verificación de precios.");
 
+  const procedureReady=!!state.procedureRules;
   let taxOK=true, taxDetail="";
-  if(RULES.nonTaxableCustomers.includes(c)){taxOK=Math.abs(d.tax)<0.01; taxDetail=`${c} tratado como no taxable → Tax esperado $0.00.`;}
-  else if(RULES.taxableCustomers.includes(c)){const expected=Math.round(d.subtotal*RULES.taxRate*100)/100; taxOK=Math.abs(d.tax-expected)<=0.01; taxDetail=`Tax esperado 8.25%: ${money(expected)}.`;}
-  else {taxDetail="Cliente no clasificado en las reglas V1; revisión manual requerida."; taxOK=true;}
+  const taxableRequired=procedureReady && procedureHas(d.customer,state.procedureRules.taxable);
+  const expectedTax=Math.round(d.subtotal*0.0825*100)/100;
+  if(taxableRequired){
+    taxOK=Math.abs(d.tax-expectedTax)<=0.01;
+    taxDetail=`Procedure: ${state.procedureRules.version} marca ${d.customer} como TAXABLE → Tax esperado 8.25%: ${money(expectedTax)}.`;
+  }else if(procedureReady){
+    taxOK=Math.abs(d.tax)<0.01;
+    taxDetail=taxOK?`Procedure: ${d.customer} no aparece en TAXABLE → Tax $0.00.`:`ERROR: ${d.customer} no aparece en TAXABLE pero la SO tiene Tax ${money(d.tax)}.`;
+  }else{
+    taxOK=false;
+    taxDetail="ERROR: carga el Sales Order Procedure vigente antes de aprobar la SO.";
+  }
   addResult(r,"Cálculo de TAXES",taxOK,taxDetail);
 
-  const stampRequired=RULES.stampCustomers.includes(c);
-  const stampOK=!stampRequired || hasPhrase(d.notes,["PLEASE GET STAMPED","GET STAMP!","GET THE STAMP!"]);
-  addResult(r,"Frase STAMP",stampOK,stampRequired?"XTO requiere STAMP; frase aceptada si está presente.":"No se requiere STAMP para este cliente.");
+  const stampRequired=procedureReady ? procedureHas(d.customer,state.procedureRules.stamp) : false;
+  const stampOK=procedureReady ? (!stampRequired || hasPhrase(d.notes,["PLEASE GET STAMPED","GET STAMP!","GET THE STAMP!"])) : false;
+  addResult(r,"Frase STAMP",stampOK,
+    procedureReady
+      ? (stampRequired ? `Procedure: ${state.procedureRules.version} requiere STAMP; la SO debe contener una frase STAMP en Notes.` : "La empresa no está listada en STAMP del procedure.")
+      : "ERROR: carga el Sales Order Procedure vigente antes de aprobar la SO.");
+
+  const discountRule=procedureReady ? findProcedureDiscount(d.customer) : null;
+  if(procedureReady && discountRule){
+    const discountErrors=[];
+    d.items.forEach(x=>{
+      if(/DELIVERY CHARGE|INSPECTION FEE/i.test(x.desc)) return;
+      if(Math.abs((x.discount||0)-discountRule.percent)>0.01)
+        discountErrors.push(`${x.pn}: descuento SO ${x.discount||0}% vs requerido ${discountRule.percent}%`);
+    });
+    addResult(r,"DISCOUNT",discountErrors.length===0,
+      discountErrors.length?discountErrors.join(" | "):`Procedure: ${d.customer} requiere ${discountRule.percent}% y todos los ítems aplicables tienen ese descuento.`);
+  }else if(procedureReady){
+    addResult(r,"DISCOUNT",true,`La empresa ${d.customer} no aparece en la lista DISCOUNT del procedure.`);
+  }else{
+    addResult(r,"DISCOUNT",false,"ERROR: carga el Sales Order Procedure vigente antes de aprobar la SO.");
+  }
 
   const allPriced=d.items.length>0 && d.items.every(x=>x.price>0);
   addResult(r,"Todos los ítems tienen precio",allPriced,allPriced?"Todos tienen precio.":"ERROR: uno o más ítems no tienen precio.");
@@ -384,6 +498,8 @@ function runAudit(){
 
   if(c==="DIAMONDBACK" && !hasPhrase(d.notes,["AFE & GL","PLEASE PROVIDE AFE & GL ACCOUNT"]))
     suggestions.push("Diamondback: confirmar que estén presentes AFE & GL Account.");
+
+  if(!procedureReady) suggestions.push("Carga el Sales Order Procedure REV20 para activar TAXABLE/STAMP/DISCOUNT dinámicos.");
 
   const errors=r.filter(x=>!x.ok);
   $("resultBanner").textContent=errors.length?`🔴 NOT APPROVED — ${errors.length} error(es)`:"🟢 APPROVED — 0 errores";
@@ -401,7 +517,7 @@ function loadDraft(){
   try{
     const d=JSON.parse(localStorage.getItem("soDraft")||"null"); if(!d)return;
     ["soNumber","customer","soldTo","shipTo","soldToWell","shipToWell","contact","phone","deliveryDate","deliveryTime","deliveryText","notes","subtotal","tax","total"].forEach(k=>setValue(k,d[k]));
-    $("itemsBody").innerHTML=""; (d.items||[]).forEach(x=>addItem(x.pn,x.desc,x.qty,x.price));
+    $("itemsBody").innerHTML=""; (d.items||[]).forEach(x=>addItem(x.pn,x.desc,x.qty,x.price,x.discount||0));
   }catch{}
 }
 function saveHistory(d,errorCount,results,suggestions){
@@ -419,4 +535,4 @@ function exportHistory(){
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="so-audit-history.json";a.click();URL.revokeObjectURL(a.href);
 }
 
-restorePriceList(); loadDraft(); renderHistory();
+restorePriceList(); restoreProcedure(); loadDraft(); renderHistory();
