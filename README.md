@@ -106,3 +106,6 @@ REV20 aliases are now structured during Procedure loading. The explicit rule `EX
 
 ### V2.6 Procedure customer matching
 XTO ENERGY / XTO ENERGY INC are normalized to the same customer key `XTO` for dynamic Procedure matching. If the loaded Procedure lists XTO ENERGY or EXXON MOBIL, TAXABLE and STAMP rules are applied to XTO ENERGY INC on the Sales Order. Procedure rules are stored under v2 keys to prevent stale cached rules from previous versions.
+
+### V2.7 Procedure parser fix
+Procedure sections are now parsed independently by locating TAXABLE, STAMP, DISCOUNT, and CONFIRMATION CHECK. XTO ENERGY entries are retained explicitly, and XTO/XTO ENERGY/XTO ENERGY INC. are treated as the same customer for procedure matching. Procedure local storage was versioned to prevent stale rules from earlier builds.
