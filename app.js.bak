@@ -331,23 +331,9 @@ function parseProcedureLists(text){
 function procedureCustomerMatch(customer, entry){
   const c=normalize(customer), e=normalize(entry);
   if(!c || !e) return false;
-
-  // Procedure alias rule: the current Procedure lists EXXON MOBIL under
-  // TAXABLE and STAMP, but explicitly states that ALL Exxon orders are
-  // created under XTO. Therefore an SO whose customer is XTO ENERGY/
-  // XTO ENERGY INC. must inherit the Exxon Mobil rules.
-  if(e.includes("EXXON MOBIL") && e.includes("ALL EXXON ORDERS WILL BE XTO")){
-    return c.includes("EXXON") || c.includes("XTO");
-  }
   if(e==="ALL PUMP SHOPS") return /PUMP SHOP/.test(c);
+  if(e==="EXXON MOBIL (ALL EXXON ORDERS WILL BE XTO)") return c.includes("EXXON") || c.includes("XTO");
   return c===e || c.includes(e) || e.includes(c);
-}
-
-function procedureRuleDisplayName(entry){
-  const e=normalize(entry);
-  if(e.includes("EXXON MOBIL") && e.includes("ALL EXXON ORDERS WILL BE XTO"))
-    return "EXXON MOBIL → XTO";
-  return entry;
 }
 
 function findProcedureDiscount(customer){
@@ -470,10 +456,7 @@ function runAudit(){
   const expectedTax=Math.round(d.subtotal*0.0825*100)/100;
   if(taxableRequired){
     taxOK=Math.abs(d.tax-expectedTax)<=0.01;
-    const taxRuleNote = procedureHas(d.customer,state.procedureRules.taxable.filter(x=>/EXXON MOBIL.*ALL EXXON ORDERS WILL BE XTO/i.test(x)))
-      ? " (EXXON MOBIL en el Procedure aplica a XTO: ALL EXXON ORDERS WILL BE XTO)"
-      : "";
-    taxDetail=`Procedure: ${state.procedureRules.version} marca ${d.customer} como TAXABLE → Tax esperado 8.25%: ${money(expectedTax)}.${taxRuleNote}`;
+    taxDetail=`Procedure: ${state.procedureRules.version} marca ${d.customer} como TAXABLE → Tax esperado 8.25%: ${money(expectedTax)}.`;
   }else if(procedureReady){
     taxOK=Math.abs(d.tax)<0.01;
     taxDetail=taxOK?`Procedure: ${d.customer} no aparece en TAXABLE → Tax $0.00.`:`ERROR: ${d.customer} no aparece en TAXABLE pero la SO tiene Tax ${money(d.tax)}.`;
@@ -487,7 +470,7 @@ function runAudit(){
   const stampOK=procedureReady ? (!stampRequired || hasPhrase(d.notes,["PLEASE GET STAMPED","GET STAMP!","GET THE STAMP!"])) : false;
   addResult(r,"Frase STAMP",stampOK,
     procedureReady
-      ? (stampRequired ? `Procedure: ${state.procedureRules.version} requiere STAMP; la SO debe contener una frase STAMP en Notes. Si la regla proviene de EXXON MOBIL, aplica a XTO por la nota “ALL EXXON ORDERS WILL BE XTO”.` : "La empresa no está listada en STAMP del procedure.")
+      ? (stampRequired ? `Procedure: ${state.procedureRules.version} requiere STAMP; la SO debe contener una frase STAMP en Notes.` : "La empresa no está listada en STAMP del procedure.")
       : "ERROR: carga el Sales Order Procedure vigente antes de aprobar la SO.");
 
   const discountRule=procedureReady ? findProcedureDiscount(d.customer) : null;

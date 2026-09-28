@@ -93,3 +93,10 @@ Price List loading now strictly uses `PN LIST` and the `Pricing_UnitPrice0` colu
 - Tax, STAMP, and discount checks use the loaded procedure instead of the old hardcoded customer lists.
 - Added a `Disc%` column to SO items so procedure discounts can be verified line-by-line. Delivery and inspection charges are excluded from the customer discount check.
 - Price List loading is strict: sheet `PN LIST`, columns `PartNumber` and `Pricing_UnitPrice0`, stored under versioned `soPriceList_v2` local storage.
+
+
+### Exxon Mobil → XTO alias rule
+- The Procedure's TAXABLE and STAMP lists contain `EXXON MOBIL (ALL EXXON ORDERS WILL BE XTO)`.
+- The auditor now explicitly interprets this as an alias rule: any Sales Order whose customer is `XTO`, `XTO ENERGY`, or `XTO ENERGY INC.` inherits the Exxon Mobil TAXABLE and STAMP requirements.
+- The application does not require the SO itself to contain the word Exxon Mobil.
+- The audit explanation identifies the rule as `EXXON MOBIL → XTO` so the result is traceable to the Procedure.
