@@ -327,23 +327,29 @@ function parseProcedureLists(text){
   const uniqueDiscounts=discounts.filter(x=>{ const k=`${x.name}|${x.percent}`; if(seenDiscount.has(k)) return false; seenDiscount.add(k); return true; });
 
   const rev=(source.match(/\bREV\s+(\d+)\b/)||[])[1] || "20";
-  return {version:`REV ${rev}`, taxable, stamp, discounts:uniqueDiscounts, loadedAt:new Date().toISOString()};
+
+  // Explicit aliases written by the procedure. REV20 states:
+  // "EXXON MOBIL (ALL EXXON ORDERS WILL BE XTO)" in BOTH TAXABLE and STAMP.
+  // Store the alias as structured data so the audit does not depend on how
+  // PDF.js happened to split the line.
+  const aliases=[];
+  if(/EXXON MOBIL\s*\(\s*ALL EXXON ORDERS WILL BE XTO\s*\)/i.test(source)){
+    aliases.push({from:"EXXON MOBIL",to:"XTO",reason:"ALL EXXON ORDERS WILL BE XTO"});
+  }
+
+  return {version:`REV ${rev}`, taxable, stamp, discounts:uniqueDiscounts, aliases, loadedAt:new Date().toISOString()};
 }
 
 function procedureCustomerMatch(customer, entry){
   const c=normalize(customer), e=normalize(entry);
   if(!c || !e) return false;
 
-  // Explicit procedure alias from REV20:
-  // EXXON MOBIL (ALL EXXON ORDERS WILL BE XTO)
-  // means every SO issued as XTO must inherit the Exxon TAXABLE/STAMP rule.
-  // We deliberately normalize common XTO legal-name variants here.
-  const isXTO = c.includes("XTO");
-  const isExxonAlias = e.includes("EXXON MOBIL") && e.includes("ALL EXXON ORDERS WILL BE XTO");
-  // REV020 explicitly says: "ALL EXXON ORDERS WILL BE XTO".
-  // Therefore an SO issued to XTO inherits the EXXON MOBIL TAXABLE/STAMP rule.
-  if(isExxonAlias && isXTO) return true;
-  if(isExxonAlias && c.includes("EXXON MOBIL")) return true;
+  // Structured aliases extracted from the loaded procedure.
+  const aliases=state.procedureRules?.aliases || [];
+  for(const a of aliases){
+    if(normalize(a.to) && c.includes(normalize(a.to)) && e.includes(normalize(a.from))) return true;
+    if(normalize(a.from) && c.includes(normalize(a.from)) && e.includes(normalize(a.from))) return true;
+  }
 
   if(e==="ALL PUMP SHOPS") return /PUMP SHOP/.test(c);
   return c===e || c.includes(e) || e.includes(c);
@@ -475,21 +481,15 @@ function runAudit(){
 
   const procedureReady=!!state.procedureRules;
   let taxOK=true, taxDetail="";
-  const xtoViaExxonRule = procedureReady && customerKey(d.customer)==="XTO" &&
-    state.procedureRules.taxable.some(x=>normalize(x).includes("EXXON MOBIL") && normalize(x).includes("ALL EXXON ORDERS WILL BE XTO"));
-  // XTO is the operational name used for all Exxon orders per REV020.
-  // Treat XTO as TAXABLE when the procedure is loaded; the explicit Exxon alias
-  // is retained as the documented reason when present.
-  const taxableRequired=procedureReady && (
-    procedureHas(d.customer,state.procedureRules.taxable) || customerKey(d.customer)==="XTO"
-  );
+  const taxableRequired=procedureReady && procedureHas(d.customer,state.procedureRules.taxable);
   const expectedTax=Math.round(d.subtotal*0.0825*100)/100;
   if(taxableRequired){
     taxOK=Math.abs(d.tax-expectedTax)<=0.01;
-    const taxRuleNote = xtoViaExxonRule
-      ? " (EXXON MOBIL en el Procedure aplica a XTO: ALL EXXON ORDERS WILL BE XTO)"
-      : "";
-    taxDetail=`Procedure: ${state.procedureRules.version} marca ${d.customer} como TAXABLE → Tax esperado 8.25%: ${money(expectedTax)}.${taxRuleNote}`;
+    const alias=state.procedureRules.aliases?.find(a=>
+      normalize(a.to) && customerKey(d.customer)==="XTO" && normalize(a.to)==="XTO"
+    );
+    const aliasNote=alias ? ` Regla aplicada por alias: ${alias.from} → ${alias.to} (${alias.reason}).` : "";
+    taxDetail=`Procedure: ${state.procedureRules.version} reconoce ${d.customer} como TAXABLE → Tax esperado 8.25%: ${money(expectedTax)}.${aliasNote}`;
   }else if(procedureReady){
     taxOK=Math.abs(d.tax)<0.01;
     taxDetail=taxOK?`Procedure: ${d.customer} no aparece en TAXABLE → Tax $0.00.`:`ERROR: ${d.customer} no aparece en TAXABLE pero la SO tiene Tax ${money(d.tax)}.`;
@@ -499,9 +499,7 @@ function runAudit(){
   }
   addResult(r,"Cálculo de TAXES",taxOK,taxDetail);
 
-  const stampRequired=procedureReady ? (
-    procedureHas(d.customer,state.procedureRules.stamp) || customerKey(d.customer)==="XTO"
-  ) : false;
+  const stampRequired=procedureReady ? procedureHas(d.customer,state.procedureRules.stamp) : false;
   const stampOK=procedureReady ? (!stampRequired || hasPhrase(d.notes,["PLEASE GET STAMPED","GET STAMP!","GET THE STAMP!"])) : false;
   addResult(r,"Frase STAMP",stampOK,
     procedureReady
