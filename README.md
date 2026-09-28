@@ -103,3 +103,6 @@ Price List loading now strictly uses `PN LIST` and the `Pricing_UnitPrice0` colu
 
 ### V2.5 Procedure alias fix
 REV20 aliases are now structured during Procedure loading. The explicit rule `EXXON MOBIL (ALL EXXON ORDERS WILL BE XTO)` is stored as `EXXON MOBIL -> XTO` and is used for both TAXABLE and STAMP. The audit no longer hardcodes XTO as taxable/stamp; it derives that relationship from the loaded Procedure. `index.html` cache-busts `app.js?v=2.5` to prevent GitHub Pages/browser caching of an older auditor script.
+
+### V2.6 Procedure customer matching
+XTO ENERGY / XTO ENERGY INC are normalized to the same customer key `XTO` for dynamic Procedure matching. If the loaded Procedure lists XTO ENERGY or EXXON MOBIL, TAXABLE and STAMP rules are applied to XTO ENERGY INC on the Sales Order. Procedure rules are stored under v2 keys to prevent stale cached rules from previous versions.

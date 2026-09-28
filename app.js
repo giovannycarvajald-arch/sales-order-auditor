@@ -344,11 +344,18 @@ function procedureCustomerMatch(customer, entry){
   const c=normalize(customer), e=normalize(entry);
   if(!c || !e) return false;
 
-  // Structured aliases extracted from the loaded procedure.
+  // Customer aliases / variants used by Odessa.
+  // XTO ENERGY INC on the SO is the same customer represented as XTO ENERGY
+  // in the Procedure. The Procedure may also document the historical alias
+  // EXXON MOBIL (ALL EXXON ORDERS WILL BE XTO).
+  const ck=customerKey(c);
+  if(ck==="XTO" && (e.includes("XTO") || e.includes("EXXON MOBIL"))) return true;
+
   const aliases=state.procedureRules?.aliases || [];
   for(const a of aliases){
-    if(normalize(a.to) && c.includes(normalize(a.to)) && e.includes(normalize(a.from))) return true;
-    if(normalize(a.from) && c.includes(normalize(a.from)) && e.includes(normalize(a.from))) return true;
+    const from=normalize(a.from), to=normalize(a.to);
+    if(to && ck===customerKey(to) && (e.includes(from) || e.includes(to))) return true;
+    if(from && c.includes(from) && (e.includes(from) || e.includes(to))) return true;
   }
 
   if(e==="ALL PUMP SHOPS") return /PUMP SHOP/.test(c);
@@ -379,8 +386,8 @@ async function loadProcedure(e){
     const rules=parseProcedureLists(text);
     state.procedureFile=file;
     state.procedureRules=rules;
-    localStorage.setItem("soaProcedureRules_v1",JSON.stringify(rules));
-    localStorage.setItem("soaProcedureMeta_v1",JSON.stringify({fileName:file.name,loadedAt:rules.loadedAt,version:rules.version}));
+    localStorage.setItem("soaProcedureRules_v2",JSON.stringify(rules));
+    localStorage.setItem("soaProcedureMeta_v2",JSON.stringify({fileName:file.name,loadedAt:rules.loadedAt,version:rules.version}));
     const total=rules.taxable.length+rules.stamp.length+rules.discounts.length;
     $("procedureStatus").textContent=`🟢 Procedure cargado: ${file.name} | ${rules.version} | ${total} reglas (${rules.taxable.length} taxable, ${rules.stamp.length} stamp, ${rules.discounts.length} discount)`;
     $("procedureStatus").className="status ok";
@@ -393,10 +400,10 @@ async function loadProcedure(e){
 
 function restoreProcedure(){
   try{
-    const raw=localStorage.getItem("soaProcedureRules_v1");
+    const raw=localStorage.getItem("soaProcedureRules_v2");
     if(raw){
       state.procedureRules=JSON.parse(raw);
-      const meta=JSON.parse(localStorage.getItem("soaProcedureMeta_v1")||"null");
+      const meta=JSON.parse(localStorage.getItem("soaProcedureMeta_v2")||"null");
       const p=state.procedureRules;
       $("procedureStatus").textContent=`🟢 Procedure local disponible${meta?.fileName?` | ${meta.fileName}`:""} | ${p.taxable.length} taxable · ${p.stamp.length} stamp · ${p.discounts.length} discount`;
       $("procedureStatus").className="status ok";
