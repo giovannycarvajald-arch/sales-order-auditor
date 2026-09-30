@@ -297,67 +297,105 @@ function cleanProcedureName(s){
 }
 
 function parseProcedureLists(text){
+  // Parse the Procedure by section boundaries instead of one large regex.
+  // This is more robust to PDF line breaks, page headers and formatting changes.
   const n=normalize(text);
   const heading="7. INFORMATION TO CONSIDER WHEN CREATING THE SALES ORDER";
   const start=n.lastIndexOf(heading);
   const source=start>=0 ? n.slice(start) : n;
-  const m=source.match(/TAXABLE\s+([\s\S]*?)\s+STAMP\s+([\s\S]*?)\s+DISCOUNT\s+([\s\S]*?)\s+CONFIRMATION CHECK/);
-  if(!m) throw new Error("No se encontraron las secciones TAXABLE, STAMP, DISCOUNT y CONFIRMATION CHECK en el procedure.");
 
-  const taxable=m[1].split(",").map(cleanProcedureName).filter(Boolean);
-  const stamp=m[2].split(",").map(cleanProcedureName).filter(Boolean);
+  const taxableIdx=source.indexOf("TAXABLE");
+  const stampIdx=source.indexOf("STAMP", taxableIdx>=0 ? taxableIdx+7 : 0);
+  const discountIdx=source.indexOf("DISCOUNT", stampIdx>=0 ? stampIdx+5 : 0);
+  const confirmationIdx=source.indexOf("CONFIRMATION CHECK", discountIdx>=0 ? discountIdx+8 : 0);
 
-  const discounts=[];
-  const discountText=m[3];
-  const pctRe=/\((\d+(?:\.\d+)?)%\)/g;
-  let pm, lastEnd=0;
-  while((pm=pctRe.exec(discountText))){
-    const before=discountText.slice(lastEnd,pm.index);
-    const comma=before.lastIndexOf(",");
-    const rawName=before.slice(comma+1).trim();
-    const name=cleanProcedureName(rawName);
-    if(name) discounts.push({name,percent:Number(pm[1])});
-    lastEnd=pm.index+pm[0].length;
+  if(taxableIdx<0 || stampIdx<0 || discountIdx<0 || confirmationIdx<0){
+    throw new Error("No se encontraron correctamente las secciones TAXABLE, STAMP, DISCOUNT y CONFIRMATION CHECK en el procedure.");
   }
-  // REV20 contains one discount written without parentheses: THRU TUBING 25%.
-  const noParen=[...discountText.matchAll(/(?:^|,|\s)(THRU TUBING)\s+(\d+(?:\.\d+)?)%/g)];
+
+  const taxableText=source.slice(taxableIdx+7, stampIdx).trim();
+  const stampText=source.slice(stampIdx+5, discountIdx).trim();
+  const discountText=source.slice(discountIdx+8, confirmationIdx).trim();
+
+  const splitCustomers=(section)=>section
+    .split(",")
+    .map(cleanProcedureName)
+    .filter(Boolean);
+
+  const taxable=splitCustomers(taxableText);
+  const stamp=splitCustomers(stampText);
+
+  // Explicit Procedure relationships / aliases.
+  const aliases=[];
+  const exxonToXto=/EXXON MOBIL\s*\(\s*ALL EXXON ORDERS WILL BE XTO\s*\)/i.test(source)
+    || /ALL EXXON ORDERS WILL BE XTO/i.test(source);
+
+  if(exxonToXto){
+    aliases.push({from:"EXXON MOBIL",to:"XTO ENERGY",reason:"ALL EXXON ORDERS WILL BE XTO"});
+
+    // If the Procedure uses the Exxon wording instead of listing XTO directly,
+    // make the documented XTO target an actual rule in both relevant lists.
+    if(!taxable.some(x=>/\bXTO\b/.test(x))) taxable.push("XTO ENERGY");
+    if(!stamp.some(x=>/\bXTO\b/.test(x))) stamp.push("XTO ENERGY");
+  }
+
+  // Current Procedures may list XTO ENERGY directly. Normalize all XTO variants
+  // into a canonical entry so "XTO ENERGY INC" on a Sales Order matches it.
+  const hasXtoTaxable=/\bXTO(?:\s+ENERGY)?(?:\s+INC\.?|\s+YELLOWJACKET)?\b/i.test(taxableText);
+  const hasXtoStamp=/\bXTO(?:\s+ENERGY)?(?:\s+INC\.?|\s+YELLOWJACKET)?\b/i.test(stampText);
+  if(hasXtoTaxable && !taxable.some(x=>/\bXTO\b/i.test(x))) taxable.push("XTO ENERGY");
+  if(hasXtoStamp && !stamp.some(x=>/\bXTO\b/i.test(x))) stamp.push("XTO ENERGY");
+
+  // Discount entries: most use (25%), with THRU TUBING written as 25%.
+  const discounts=[];
+  const pctRe=/([^,]+?)\s*\((\d+(?:\.\d+)?)%\)/g;
+  let pm;
+  while((pm=pctRe.exec(discountText))){
+    const name=cleanProcedureName(pm[1]);
+    if(name) discounts.push({name,percent:Number(pm[2])});
+  }
+  const noParen=[...discountText.matchAll(/(?:^|,)\s*(THRU TUBING)\s+(\d+(?:\.\d+)?)%/g)];
   noParen.forEach(x=>discounts.push({name:cleanProcedureName(x[1]),percent:Number(x[2])}));
-  // De-duplicate while preserving the first occurrence.
+
   const seenDiscount=new Set();
-  const uniqueDiscounts=discounts.filter(x=>{ const k=`${x.name}|${x.percent}`; if(seenDiscount.has(k)) return false; seenDiscount.add(k); return true; });
+  const uniqueDiscounts=discounts.filter(x=>{
+    const k=`${x.name}|${x.percent}`;
+    if(seenDiscount.has(k)) return false;
+    seenDiscount.add(k);
+    return true;
+  });
 
   const rev=(source.match(/\bREV\s+(\d+)\b/)||[])[1] || "20";
 
-  // Explicit aliases written by the procedure. REV20 states:
-  // "EXXON MOBIL (ALL EXXON ORDERS WILL BE XTO)" in BOTH TAXABLE and STAMP.
-  // Store the alias as structured data so the audit does not depend on how
-  // PDF.js happened to split the line.
-  const aliases=[];
-  if(/EXXON MOBIL\s*\(\s*ALL EXXON ORDERS WILL BE XTO\s*\)/i.test(source)){
-    aliases.push({from:"EXXON MOBIL",to:"XTO",reason:"ALL EXXON ORDERS WILL BE XTO"});
-  }
-
-  return {version:`REV ${rev}`, taxable, stamp, discounts:uniqueDiscounts, aliases, loadedAt:new Date().toISOString()};
+  return {
+    version:`REV ${rev}`,
+    taxable:[...new Set(taxable)],
+    stamp:[...new Set(stamp)],
+    discounts:uniqueDiscounts,
+    aliases,
+    loadedAt:new Date().toISOString()
+  };
 }
 
 function procedureCustomerMatch(customer, entry){
   const c=normalize(customer), e=normalize(entry);
   if(!c || !e) return false;
 
-  // Customer aliases / variants used by Odessa.
-  // XTO ENERGY INC on the SO is the same customer represented as XTO ENERGY
-  // in the Procedure. The Procedure may also document the historical alias
-  // EXXON MOBIL (ALL EXXON ORDERS WILL BE XTO).
   const ck=customerKey(c);
-  if(ck==="XTO" && (e.includes("XTO") || e.includes("EXXON MOBIL"))) return true;
+
+  // Canonical XTO matching: Sales Orders can say XTO, XTO ENERGY,
+  // or XTO ENERGY INC., while the Procedure may say XTO ENERGY.
+  if(ck==="XTO" && /\bXTO(?:\s+ENERGY)?(?:\s+INC\.?)?\b/.test(e)) return true;
 
   const aliases=state.procedureRules?.aliases || [];
   for(const a of aliases){
     const from=normalize(a.from), to=normalize(a.to);
-    if(to && ck===customerKey(to) && (e.includes(from) || e.includes(to))) return true;
-    if(from && c.includes(from) && (e.includes(from) || e.includes(to))) return true;
+    if(ck==="XTO" && to && e.includes(to)) return true;
+    if(ck==="XTO" && from && e.includes(from)) return true;
+    if(from && c.includes(from) && (e.includes(from) || (to && e.includes(to)))) return true;
   }
 
+  if(e.includes("EXXON MOBIL") && /ALL EXXON ORDERS WILL BE XTO/.test(e)) return ck==="XTO";
   if(e==="ALL PUMP SHOPS") return /PUMP SHOP/.test(c);
   return c===e || c.includes(e) || e.includes(c);
 }
@@ -389,7 +427,9 @@ async function loadProcedure(e){
     localStorage.setItem("soaProcedureRules_v2",JSON.stringify(rules));
     localStorage.setItem("soaProcedureMeta_v2",JSON.stringify({fileName:file.name,loadedAt:rules.loadedAt,version:rules.version}));
     const total=rules.taxable.length+rules.stamp.length+rules.discounts.length;
-    $("procedureStatus").textContent=`🟢 Procedure cargado: ${file.name} | ${rules.version} | ${total} reglas (${rules.taxable.length} taxable, ${rules.stamp.length} stamp, ${rules.discounts.length} discount)`;
+    const xtoTax=rules.taxable.some(x=>/\bXTO\b/i.test(x));
+    const xtoStamp=rules.stamp.some(x=>/\bXTO\b/i.test(x));
+    $("procedureStatus").textContent=`🟢 Procedure cargado: ${file.name} | ${rules.version} | ${total} reglas (${rules.taxable.length} taxable, ${rules.stamp.length} stamp, ${rules.discounts.length} discount) | XTO TAXABLE: ${xtoTax?"SI":"NO"} | XTO STAMP: ${xtoStamp?"SI":"NO"}`;
     $("procedureStatus").className="status ok";
   }catch(err){
     state.procedureRules=null;

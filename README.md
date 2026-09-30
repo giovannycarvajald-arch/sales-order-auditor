@@ -109,3 +109,6 @@ XTO ENERGY / XTO ENERGY INC are normalized to the same customer key `XTO` for dy
 
 ### V2.7 Procedure parser fix
 Procedure sections are now parsed independently by locating TAXABLE, STAMP, DISCOUNT, and CONFIRMATION CHECK. XTO ENERGY entries are retained explicitly, and XTO/XTO ENERGY/XTO ENERGY INC. are treated as the same customer for procedure matching. Procedure local storage was versioned to prevent stale rules from earlier builds.
+
+### V2.8 Procedure parser fix
+Procedure sections are parsed independently by TAXABLE/STAMP/DISCOUNT/CONFIRMATION CHECK boundaries. XTO ENERGY is canonicalized so XTO, XTO ENERGY and XTO ENERGY INC on a Sales Order match the Procedure. The Procedure load status now explicitly reports whether XTO was found in TAXABLE and STAMP.
