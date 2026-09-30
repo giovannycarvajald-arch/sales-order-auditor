@@ -82,11 +82,11 @@ The interface now clearly separates "PDF loaded" from "items detected". Selectin
 ### V1.9 Price List fix
 The importer now uses the exact Odessa workbook structure: `PN LIST` → `PartNumber`, `Name`, `Pricing_UnitPrice0`. It no longer guesses the first numeric value in a row. Price lookups are exact normalized Part Number matches, and the loaded Price List is persisted locally in the browser.
 
-### V3.1 Procedure-driven audit + Price List correction
+### V3.2 Procedure-driven audit + Price List correction
 Price List loading now strictly uses `PN LIST` and the `Pricing_UnitPrice0` column. It no longer guesses numeric cells. The app uses a versioned local-storage key so stale mappings from earlier versions cannot override the newly loaded Price List. Missing PNs are explicitly reported as `PN NOT FOUND IN PRICE LIST`.
 
 
-### V3.1 changes
+### V3.2 changes
 - Added a local PDF uploader for the current Sales Order Procedure.
 - The app reads the section **7. INFORMATION TO CONSIDER WHEN CREATING THE SALES ORDER** and extracts the `TAXABLE`, `STAMP`, and `DISCOUNT` lists from the procedure (the current REV30 lists are on page 22).
 - Procedure rules are stored in browser `localStorage` and are replaced when a newer procedure is uploaded.
@@ -114,5 +114,5 @@ Procedure sections are now parsed independently by locating TAXABLE, STAMP, DISC
 Procedure sections are parsed independently by TAXABLE/STAMP/DISCOUNT/CONFIRMATION CHECK boundaries. XTO ENERGY is canonicalized so XTO, XTO ENERGY and XTO ENERGY INC on a Sales Order match the Procedure. The Procedure load status now explicitly reports whether XTO was found in TAXABLE and STAMP.
 
 
-### V3.1 Delivery extraction
+### V3.2 Delivery extraction
 The SO parser now prioritizes the explicit Odessa note format `Delivery: M/D/YYYY h:mm AM/PM` when extracting Delivery Date and Delivery Time. The detected line is also shown in Delivery Text as source context.

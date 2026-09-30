@@ -201,8 +201,16 @@ function parseSO(text){
   // Phone formats seen on Odessa SOs include "+ 1 4322907927".
   const phone=firstMatch(t, /(\+\s*1\s*\d{10}|\+?1[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})/);
 
-  const date=firstMatch(t, /\b(0?[1-9]|1[0-2])[\/\-](0?[1-9]|[12]\d|3[01])[\/\-](20\d{2})\b/);
-  const time=firstMatch(t, /\b((?:0?[1-9]|1[0-2]):[0-5]\d\s*(?:AM|PM))\b/i);
+  // Delivery date/time can appear in the Notes as:
+  //   Delivery: 9/24/2026 4:00 PM
+  // but many Odessa SOs also repeat the date under every item as:
+  //   Ship Dates:
+  //   1 by 9/24/2026
+  // Prefer the explicit Delivery line, then fall back to Ship Dates.
+  const deliveryLine = t.match(/Delivery\s*:\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})(?:\s+((?:0?[1-9]|1[0-2]):[0-5]\d\s*(?:AM|PM)))?/i);
+  const shipDateLine = t.match(/Ship\s+Dates?\s*:\s*\d+\s+by\s+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/i);
+  const date = deliveryLine?.[1] || shipDateLine?.[1] || '';
+  const time = deliveryLine?.[2] || '';
 
   // Sold To / Ship To are two side-by-side columns in the Odessa PDF.
   // The previous parser flattened both columns into one line, which could
@@ -253,9 +261,18 @@ function parseSO(text){
     setValue("deliveryDate",`${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`);
   }
   if(time){
-    const m=time.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-    let h=Number(m[1]); if(m[3].toUpperCase()==="PM" && h<12) h+=12; if(m[3].toUpperCase()==="AM" && h===12) h=0;
-    setValue("deliveryTime",`${String(h).padStart(2,"0")}:${m[2]}`);
+    const tm=time.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+    if(tm){
+      let h=Number(tm[1]); if(tm[3].toUpperCase()==="PM" && h<12) h+=12; if(tm[3].toUpperCase()==="AM" && h===12) h=0;
+      setValue("deliveryTime",`${String(h).padStart(2,"0")}:${tm[2]}`);
+    }
+  }
+  // Keep a visible trace of where the delivery date came from. This helps
+  // verify the parser when a SO uses Ship Dates instead of a Delivery note.
+  if(date){
+    const sourceLabel = deliveryLine ? "Delivery note" : "Ship Dates";
+    const currentDeliveryText = $("deliveryText").value || "";
+    if(!currentDeliveryText) setValue("deliveryText", `${sourceLabel}: ${date}${time ? ` ${time}` : ""}`);
   }
 
   const noteText=t;
