@@ -102,44 +102,90 @@ async function extractPDFText(file){
   return allTexts.join("\n");
 }
 
-function columnBlockFromLayout(label){
-  const wanted=new RegExp(`^${label}\\s*:??$`,`i`);
+function findPartyColumn(label){
+  const target=normalize(label);
   for(const page of state.pdfLayout||[]){
-    const labelItem=page.items.find(it=>wanted.test(it.text.trim()));
-    if(!labelItem) continue;
-    const lx=labelItem.x, ly=labelItem.y;
-    const candidates=page.rows
-      .filter(r=>r.y<ly && r.y>ly-120)
-      .map(r=>({
-        y:r.y,
-        text:r.items.filter(it=>Math.abs(it.x-lx)<330).map(it=>it.text).join(" ").replace(/\s+/g," ").trim()
-      }))
-      .filter(r=>r.text);
-    return candidates;
+    for(const row of page.rows){
+      const rowText=normalize(row.text);
+      if(!rowText.includes(target)) continue;
+      const labelItem=row.items.find(it=>normalize(it.text).includes(target));
+      if(!labelItem) continue;
+      const otherLabel= target.includes("SOLD TO") ? "SHIP TO" : "SOLD TO";
+      let otherX=null;
+      const otherItem=row.items.find(it=>normalize(it.text).includes(otherLabel));
+      if(otherItem) otherX=otherItem.x;
+      return {page,rowY:row.y,labelX:labelItem.x,otherX};
+    }
   }
-  return [];
+  return null;
+}
+
+function columnBlockFromLayout(label){
+  const found=findPartyColumn(label);
+  if(!found) return [];
+  const {page,rowY,labelX,otherX}=found;
+  const isSold=normalize(label)==="SOLD TO";
+  const left=Math.min(labelX, otherX==null ? labelX+500 : otherX);
+  const right=Math.max(labelX, otherX==null ? labelX+500 : otherX);
+  const gap=20;
+  const rows=page.rows
+    .filter(r=>r.y<rowY && r.y>rowY-150)
+    .map(r=>{
+      const texts=r.items.filter(it=>{
+        if(isSold){
+          if(otherX!=null) return it.x < otherX-gap && it.x >= labelX-gap;
+          return it.x >= labelX-gap && it.x < labelX+330;
+        }else{
+          if(otherX!=null) return it.x >= otherX-gap;
+          return it.x >= labelX-gap;
+        }
+      }).sort((a,b)=>a.x-b.x).map(it=>it.text);
+      return {y:r.y,text:texts.join(" ").replace(/\s+/g," ").trim()};
+    })
+    .filter(r=>r.text);
+  return rows;
+}
+
+function cleanPartyLine(x){
+  return String(x||"").replace(/\s+/g," ").replace(/,$/,"").trim();
+}
+function isAddressLine(x){
+  const n=normalize(x);
+  return !n ||
+    /^\d+\s+/.test(n) ||
+    /\b(?:STREET|ST|ROAD|RD|AVENUE|AVE|HIGHWAY|HWY|DRIVE|DR|LANE|LN|BOULEVARD|BLVD|PARKWAY|PKWY|WAY)\b/.test(n) ||
+    /\b(?:TX|OK|LA|CO|ND|NM|PA|KS|WY|UT)\s+\d{5}(?:-\d{4})?\b/.test(n) ||
+    /^ODESSA SEPARATOR/.test(n) ||
+    /^1001 E\. PEARL/.test(n) ||
+    /^DELIVERY TICKET/.test(n) ||
+    /^SHIPPING METHOD/.test(n) ||
+    /^CUSTOMER P\/?O/.test(n) ||
+    /^INVENTORY LOCATION/.test(n) ||
+    /^432[-\s]/.test(n) ||
+    /^SO\d+/.test(n);
 }
 function extractCompanyAndWell(label, fallbackText){
   const block=columnBlockFromLayout(label);
   if(block.length){
-    const useful=block.map(x=>x.text).filter(x=>
-      !/^Odessa Separator Inc\.?$/i.test(x) &&
-      !/^1001 E\. Pearl St/i.test(x) &&
-      !/^Odessa, TX/i.test(x) &&
-      !/^\d{3}-\d{3}-\d{4}/.test(x) &&
-      !/^SO\d+/i.test(x) &&
-      !/^Delivery Ticket/i.test(x) &&
-      !/^Shipping Method/i.test(x)
-    );
+    const useful=block.map(x=>cleanPartyLine(x.text)).filter(x=>!isAddressLine(x));
     const company=useful[0]||"";
-    const well=label.toLowerCase()==="ship to" ? (useful[1]||"") : "";
-    return {company:company.replace(/,$/,"").trim(),well:well.replace(/,$/,"").trim()};
+    let well="";
+    for(let i=1;i<useful.length;i++){
+      const candidate=useful[i];
+      // A well can appear in either party column. Do not assume it is only Ship To.
+      if(candidate && !/^(FORT WORTH|ODESSA|TX|TEXAS)\b/i.test(candidate)) { well=candidate; break; }
+    }
+    return {company,well};
   }
-  const rx=label.toLowerCase()==="sold to"
-    ? /Sold To\s*:\s*([A-Z][A-Z0-9 &'./-]{2,80}?)(?=\s+\d{1,6}\s+[A-Z])/i
-    : /Ship To\s*:\s*([A-Z][A-Z0-9 &'./-]{2,80}?)(?=\s+[A-Z0-9#].{0,40}?\s*(?:Odessa Separator|\d{3}-\d{3}-\d{4}))/i;
-  const m=fallbackText.match(rx);
-  return {company:m?m[1].trim():"",well:""};
+
+  // Text-layer fallback: look at the actual label and capture the first
+  // company line plus a possible well line before the next known block.
+  const flat=String(fallbackText||"").replace(/\s+/g," ");
+  const lab=label.replace(/\s+/g," ");
+  const next=label.toLowerCase()==="sold to" ? "Ship To" : "Odessa Separator Inc";
+  const rx=new RegExp(lab+"\\s*:\\s*(XTO ENERGY INC|[A-Z][A-Z0-9 &'./-]{2,80}?)(?:\\s+(.{2,80}?))?(?=\\s+"+next+")","i");
+  const m=flat.match(rx);
+  return {company:m?cleanPartyLine(m[1]):"",well:m&&m[2]&&!isAddressLine(m[2])?cleanPartyLine(m[2]):""};
 }
 
 function firstMatch(text, regex){
@@ -163,23 +209,31 @@ function parseSO(text){
   // produce an empty Customer and a Ship To containing the entire address.
   const soldBlock=extractCompanyAndWell("Sold To",t);
   const shipBlock=extractCompanyAndWell("Ship To",t);
+
+  // Odessa SO structure: the company normally appears in both Sold To and
+  // Ship To. The well can appear on the following line in the party block.
+  // Customer must come from the company name, never from the address/well.
   let customer=soldBlock.company || shipBlock.company || "";
-  let shipTo=shipBlock.company || "";
+  let soldTo=soldBlock.company || customer || "";
+  let shipTo=shipBlock.company || customer || "";
+  let soldToWell=soldBlock.well || "";
   let shipToWell=shipBlock.well || "";
 
-  // Strong fallback for the common XTO layout, where the PDF text layer
-  // places both company names on the same visual line.
+  // Last-resort company detection from the flattened text. This is only a
+  // fallback; coordinate-based extraction above is the primary parser.
   if(!customer){
-    const m=t.match(/Sold To\s*:\s*XTO ENERGY INC/i);
-    if(m) customer="XTO ENERGY INC";
-  }
-  if(!shipTo){
-    const m=t.match(/Ship To\s*:\s*XTO ENERGY INC/i);
-    if(m) shipTo="XTO ENERGY INC";
+    const companyMatch=t.match(/(?:Sold To|Ship To)\s*:\s*(XTO ENERGY INC|BTA OIL & GAS|COTERRA(?: ENERGY)?|DIAMONDBACK[^\s]*)/i);
+    if(companyMatch) customer=companyMatch[1].trim();
+    soldTo=soldTo||customer;
+    shipTo=shipTo||customer;
   }
   if(!shipToWell){
-    const m=t.match(/Ship To\s*:\s*XTO ENERGY INC\s+(.{2,80}?)(?=\s+Odessa Separator Inc)/i);
-    if(m) shipToWell=m[1].replace(/\s+/g," ").replace(/,$/,"").trim();
+    const m=t.match(/Ship To\s*:\s*(?:XTO ENERGY INC)\s+(.{2,80}?)(?=\s+Odessa Separator Inc)/i);
+    if(m && !isAddressLine(m[1])) shipToWell=cleanPartyLine(m[1]);
+  }
+  if(!soldToWell){
+    const m=t.match(/Sold To\s*:\s*(?:XTO ENERGY INC)\s+(.{2,80}?)(?=\s+810\s+HOUSTON STREET)/i);
+    if(m && !isAddressLine(m[1])) soldToWell=cleanPartyLine(m[1]);
   }
 
   const contactLine=lines.find(x=>/^Contact\s*:/i.test(x))||"";
@@ -187,8 +241,9 @@ function parseSO(text){
 
   setValue("soNumber",so);
   setValue("customer",customer);
-  setValue("soldTo",customer);
+  setValue("soldTo",soldTo);
   setValue("shipTo",shipTo);
+  setValue("soldToWell",soldToWell);
   setValue("shipToWell",shipToWell);
   setValue("phone",phone);
   setValue("contact",contact);

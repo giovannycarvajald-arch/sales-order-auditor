@@ -14,7 +14,7 @@ Cargar un PDF de una Sales Order, extraer los datos principales y ejecutar regla
 - Price List, borradores e historial se guardan en el almacenamiento local del navegador.
 - GitHub Pages solo sirve el código estático.
 
-> Nota: esta V1 carga PDF.js y SheetJS desde CDN. El contenido del PDF no se envía a esos servicios; los scripts son dependencias de la aplicación. En una V2 podemos incluir las librerías dentro del repositorio para eliminar esa dependencia externa.
+> Nota: esta V1 carga PDF.js y SheetJS desde CDN. El contenido del PDF no se envía a esos servicios; los scripts son dependencias de la aplicación. En una V3 podemos incluir las librerías dentro del repositorio para eliminar esa dependencia externa.
 
 ## V1 incluye
 
@@ -53,7 +53,7 @@ Para máxima privacidad del código, usa repositorio privado. La aplicación sig
 - Reporte imprimible/PDF.
 - Exportación a Excel.
 - Tests automáticos con SO ya auditadas.
-- V2 opcional con IA para casos ambiguos, manteniendo cálculos críticos determinísticos.
+- V3 opcional con IA para casos ambiguos, manteniendo cálculos críticos determinísticos.
 
 ### V1.1 parser fix
 The item parser now attempts to read unit prices from the PDF text instead of creating detected part numbers with a default price of $0.00. Because PDF layouts can vary, the extracted item values remain editable before auditing.
@@ -82,13 +82,13 @@ The interface now clearly separates "PDF loaded" from "items detected". Selectin
 ### V1.9 Price List fix
 The importer now uses the exact Odessa workbook structure: `PN LIST` → `PartNumber`, `Name`, `Pricing_UnitPrice0`. It no longer guesses the first numeric value in a row. Price lookups are exact normalized Part Number matches, and the loaded Price List is persisted locally in the browser.
 
-### V2.1 Procedure-driven audit + Price List correction
+### V3.1 Procedure-driven audit + Price List correction
 Price List loading now strictly uses `PN LIST` and the `Pricing_UnitPrice0` column. It no longer guesses numeric cells. The app uses a versioned local-storage key so stale mappings from earlier versions cannot override the newly loaded Price List. Missing PNs are explicitly reported as `PN NOT FOUND IN PRICE LIST`.
 
 
-### V2.1 changes
+### V3.1 changes
 - Added a local PDF uploader for the current Sales Order Procedure.
-- The app reads the section **7. INFORMATION TO CONSIDER WHEN CREATING THE SALES ORDER** and extracts the `TAXABLE`, `STAMP`, and `DISCOUNT` lists from the procedure (the current REV20 lists are on page 22).
+- The app reads the section **7. INFORMATION TO CONSIDER WHEN CREATING THE SALES ORDER** and extracts the `TAXABLE`, `STAMP`, and `DISCOUNT` lists from the procedure (the current REV30 lists are on page 22).
 - Procedure rules are stored in browser `localStorage` and are replaced when a newer procedure is uploaded.
 - Tax, STAMP, and discount checks use the loaded procedure instead of the old hardcoded customer lists.
 - Added a `Disc%` column to SO items so procedure discounts can be verified line-by-line. Delivery and inspection charges are excluded from the customer discount check.
@@ -101,14 +101,14 @@ Price List loading now strictly uses `PN LIST` and the `Pricing_UnitPrice0` colu
 - The application does not require the SO itself to contain the word Exxon Mobil.
 - The audit explanation identifies the rule as `EXXON MOBIL → XTO` so the result is traceable to the Procedure.
 
-### V2.5 Procedure alias fix
-REV20 aliases are now structured during Procedure loading. The explicit rule `EXXON MOBIL (ALL EXXON ORDERS WILL BE XTO)` is stored as `EXXON MOBIL -> XTO` and is used for both TAXABLE and STAMP. The audit no longer hardcodes XTO as taxable/stamp; it derives that relationship from the loaded Procedure. `index.html` cache-busts `app.js?v=2.5` to prevent GitHub Pages/browser caching of an older auditor script.
+### V3.5 Procedure alias fix
+REV30 aliases are now structured during Procedure loading. The explicit rule `EXXON MOBIL (ALL EXXON ORDERS WILL BE XTO)` is stored as `EXXON MOBIL -> XTO` and is used for both TAXABLE and STAMP. The audit no longer hardcodes XTO as taxable/stamp; it derives that relationship from the loaded Procedure. `index.html` cache-busts `app.js?v=2.5` to prevent GitHub Pages/browser caching of an older auditor script.
 
-### V2.6 Procedure customer matching
+### V3.6 Procedure customer matching
 XTO ENERGY / XTO ENERGY INC are normalized to the same customer key `XTO` for dynamic Procedure matching. If the loaded Procedure lists XTO ENERGY or EXXON MOBIL, TAXABLE and STAMP rules are applied to XTO ENERGY INC on the Sales Order. Procedure rules are stored under v2 keys to prevent stale cached rules from previous versions.
 
-### V2.7 Procedure parser fix
+### V3.7 Procedure parser fix
 Procedure sections are now parsed independently by locating TAXABLE, STAMP, DISCOUNT, and CONFIRMATION CHECK. XTO ENERGY entries are retained explicitly, and XTO/XTO ENERGY/XTO ENERGY INC. are treated as the same customer for procedure matching. Procedure local storage was versioned to prevent stale rules from earlier builds.
 
-### V2.8 Procedure parser fix
+### V3.8 Procedure parser fix
 Procedure sections are parsed independently by TAXABLE/STAMP/DISCOUNT/CONFIRMATION CHECK boundaries. XTO ENERGY is canonicalized so XTO, XTO ENERGY and XTO ENERGY INC on a Sales Order match the Procedure. The Procedure load status now explicitly reports whether XTO was found in TAXABLE and STAMP.
