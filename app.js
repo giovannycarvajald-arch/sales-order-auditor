@@ -638,9 +638,30 @@ function runAudit(){
 
   const de=deliveryExpected(d);
   const deliveryText=normalize(d.deliveryText);
-  const deliveryPriceMatch=deliveryText.includes("AFTER HOURS")?RULES.afterHoursDelivery:deliveryText.includes("END USER")?RULES.endUserDelivery:null;
-  let delOK=de.type==="UNKNOWN" ? true : de.type==="NONE" ? !deliveryPriceMatch : deliveryPriceMatch===de.price;
-  addResult(r,"Delivery Charge",delOK,de.type==="UNKNOWN"?"No se pudo validar fecha/hora.":`${de.type}${de.price!=null?" — "+money(de.price):" — sin cargo"}. ${de.reason}`);
+  const deliveryItems=d.items.filter(x=>/DELIVERY\s+CHARGE|AFTER\s+HOURS\s+DELIVERY|END\s+USER\s+DELIVERY/i.test(x.desc)||x.pn==="1004-0002-00");
+  const hasEndUserItem=deliveryItems.some(x=>/END\s+USER\s+DELIVERY/i.test(x.desc)||x.pn==="1004-0002-00");
+  const hasAfterHoursItem=deliveryItems.some(x=>/AFTER\s+HOURS\s+DELIVERY/i.test(x.desc));
+  const deliveryItemAmount=deliveryItems.reduce((sum,x)=>sum+(Number(x.amount)||Number(x.price||0)*Number(x.qty||1)),0);
+  const deliveryPriceMatch=
+    deliveryText.includes("AFTER HOURS") ? RULES.afterHoursDelivery :
+    deliveryText.includes("END USER") ? RULES.endUserDelivery :
+    hasAfterHoursItem ? RULES.afterHoursDelivery :
+    hasEndUserItem ? RULES.endUserDelivery : null;
+  let delOK;
+  if(de.type==="UNKNOWN") delOK=true;
+  else if(de.type==="NONE") delOK=!deliveryPriceMatch && deliveryItems.length===0;
+  else {
+    const hasExpectedItem=de.type==="END USER" ? hasEndUserItem : hasAfterHoursItem;
+    const expectedPrice=de.price;
+    const itemPriceOK=deliveryItems.some(x=>Math.abs(Number(x.price)-expectedPrice)<=0.01 || Math.abs(Number(x.amount)-expectedPrice)<=0.01);
+    const textPriceOK=deliveryPriceMatch===expectedPrice;
+    delOK=hasExpectedItem && (itemPriceOK || textPriceOK);
+  }
+  let deliveryDetail;
+  if(de.type==="UNKNOWN") deliveryDetail="No se pudo validar fecha/hora.";
+  else if(de.type==="NONE") deliveryDetail=`${de.type} — sin cargo. ${de.reason}`;
+  else deliveryDetail=`${de.type} — ${money(de.price)}. ${de.reason}${deliveryItems.length?` Se encontró en la SO: ${deliveryItems.map(x=>`${x.pn} ${x.desc} (${money(x.price)} x ${x.qty})`).join(" | ")}.`:" No se encontró un ítem de Delivery Charge correspondiente en la SO."}`;
+  addResult(r,"Delivery Charge",delOK,deliveryDetail);
 
   const hasTrigger=d.items.some(x=>x.pn==="1014-0142-00");
   const hasInspection=d.items.some(x=>x.pn==="1004-0009-00");
