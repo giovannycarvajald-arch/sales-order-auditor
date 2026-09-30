@@ -4,7 +4,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
 
 const $ = id => document.getElementById(id);
-const state = { pdfFile:null, priceList:new Map(), items:[], procedureFile:null, procedureRules:null };
+const state = { pdfFile:null, priceList:new Map(), items:[], procedureFile:null, procedureRules:null, pdfLayout:[] };
 
 const PN_REGEX = /^\d{2,4}-\d{4}-\d{2}(?:-\d{2})?$/;
 
@@ -53,7 +53,7 @@ function customerKey(s){
   const x=normalize(s);
   if(x.includes("DIAMONDBACK")) return "DIAMONDBACK";
   if(x.includes("COTERRA")) return "COTERRA";
-  if(x.includes("XTO")) return "XTO";
+  if(/\bXTO(?:\s+ENERGY)?(?:\s+INC\.?)?\b/.test(x)) return "XTO";
   if(x.includes("BTA")) return "BTA";
   if(x.includes("SUMMIT")) return "SUMMIT";
   if(x.includes("BURLESON")) return "BURLESON";
@@ -68,31 +68,80 @@ function parseMoney(s){
 function setValue(id,v){ $(id).value = v ?? ""; }
 
 async function extractPDFText(file){
-  const buf = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
   const pages=[];
-  for(let i=1;i<=pdf.numPages;i++){
-    const page=await pdf.getPage(i);
+  const allTexts=[];
+  for(let pageNo=1;pageNo<=pdf.numPages;pageNo++){
+    const page=await pdf.getPage(pageNo);
     const content=await page.getTextContent();
     const items=content.items.map(x=>({
-      text:x.str || "",
-      x:x.transform?.[4] ?? 0,
-      y:x.transform?.[5] ?? 0
+      text:x.str||"",
+      x:x.transform?.[4]??0,
+      y:x.transform?.[5]??0,
+      w:x.width??0
     })).filter(x=>x.text.trim());
 
-    // Reconstruct visual lines from PDF text positions.
     const rows=[];
     for(const item of items){
       let row=rows.find(r=>Math.abs(r.y-item.y)<3);
-      if(!row){ row={y:item.y,items:[]}; rows.push(row); }
+      if(!row){row={y:item.y,items:[]};rows.push(row);}
       row.items.push(item);
     }
     rows.sort((a,b)=>b.y-a.y);
-    const lines=rows.map(r=>r.items.sort((a,b)=>a.x-b.x).map(x=>x.text).join(" ").replace(/\s+/g," ").trim());
-    pages.push(lines.join("\n"));
+    rows.forEach(r=>r.items.sort((a,b)=>a.x-b.x));
+    const lines=rows.map(r=>({
+      y:r.y,
+      items:r.items,
+      text:r.items.map(x=>x.text).join(" ").replace(/\s+/g," ").trim()
+    }));
+    pages.push({pageNo,items,rows:lines});
+    allTexts.push(lines.map(x=>x.text).join("\n"));
   }
-  return pages.join("\n");
+  state.pdfLayout=pages;
+  return allTexts.join("\n");
 }
+
+function columnBlockFromLayout(label){
+  const wanted=new RegExp(`^${label}\\s*:??$`,`i`);
+  for(const page of state.pdfLayout||[]){
+    const labelItem=page.items.find(it=>wanted.test(it.text.trim()));
+    if(!labelItem) continue;
+    const lx=labelItem.x, ly=labelItem.y;
+    const candidates=page.rows
+      .filter(r=>r.y<ly && r.y>ly-120)
+      .map(r=>({
+        y:r.y,
+        text:r.items.filter(it=>Math.abs(it.x-lx)<330).map(it=>it.text).join(" ").replace(/\s+/g," ").trim()
+      }))
+      .filter(r=>r.text);
+    return candidates;
+  }
+  return [];
+}
+function extractCompanyAndWell(label, fallbackText){
+  const block=columnBlockFromLayout(label);
+  if(block.length){
+    const useful=block.map(x=>x.text).filter(x=>
+      !/^Odessa Separator Inc\.?$/i.test(x) &&
+      !/^1001 E\. Pearl St/i.test(x) &&
+      !/^Odessa, TX/i.test(x) &&
+      !/^\d{3}-\d{3}-\d{4}/.test(x) &&
+      !/^SO\d+/i.test(x) &&
+      !/^Delivery Ticket/i.test(x) &&
+      !/^Shipping Method/i.test(x)
+    );
+    const company=useful[0]||"";
+    const well=label.toLowerCase()==="ship to" ? (useful[1]||"") : "";
+    return {company:company.replace(/,$/,"").trim(),well:well.replace(/,$/,"").trim()};
+  }
+  const rx=label.toLowerCase()==="sold to"
+    ? /Sold To\s*:\s*([A-Z][A-Z0-9 &'./-]{2,80}?)(?=\s+\d{1,6}\s+[A-Z])/i
+    : /Ship To\s*:\s*([A-Z][A-Z0-9 &'./-]{2,80}?)(?=\s+[A-Z0-9#].{0,40}?\s*(?:Odessa Separator|\d{3}-\d{3}-\d{4}))/i;
+  const m=fallbackText.match(rx);
+  return {company:m?m[1].trim():"",well:""};
+}
+
 function firstMatch(text, regex){
   const m=text.match(regex); return m ? (m[1]||m[0]).trim() : "";
 }
@@ -109,18 +158,28 @@ function parseSO(text){
   const date=firstMatch(t, /\b(0?[1-9]|1[0-2])[\/\-](0?[1-9]|[12]\d|3[01])[\/\-](20\d{2})\b/);
   const time=firstMatch(t, /\b((?:0?[1-9]|1[0-2]):[0-5]\d\s*(?:AM|PM))\b/i);
 
-  // Use the labels and the next meaningful line rather than a greedy
-  // expression; this matches the actual Odessa PDF structure better.
-  const soldIdx=lines.findIndex(x=>/^Sold To\s*:?\s*$/i.test(x));
-  const shipIdx=lines.findIndex(x=>/^Ship To\s*:?\s*$/i.test(x));
-  const customer=soldIdx>=0 ? (lines[soldIdx+1]||"") : firstMatch(t,/Sold To\s*:?\s*([A-Z][A-Z0-9 &.,'\/-]{2,80})\s+Ship To/i);
-  const shipTo=shipIdx>=0 ? (lines[shipIdx+1]||"") : firstMatch(t,/Ship To\s*:?\s*([A-Z][A-Z0-9 &.,'\/-]{2,100})\s+(?:Delivery|Ticket|Shipping)/i);
+  // Sold To / Ship To are two side-by-side columns in the Odessa PDF.
+  // The previous parser flattened both columns into one line, which could
+  // produce an empty Customer and a Ship To containing the entire address.
+  const soldBlock=extractCompanyAndWell("Sold To",t);
+  const shipBlock=extractCompanyAndWell("Ship To",t);
+  let customer=soldBlock.company || shipBlock.company || "";
+  let shipTo=shipBlock.company || "";
+  let shipToWell=shipBlock.well || "";
 
-  // Ship-to well is normally the line after the Ship To company.
-  let shipToWell="";
-  if(shipIdx>=0){
-    const candidate=lines[shipIdx+2]||"";
-    if(candidate && !/Odessa Separator|^\d{3}-\d{3}-\d{4}|SO\d+/i.test(candidate)) shipToWell=candidate.replace(/,$/,"").trim();
+  // Strong fallback for the common XTO layout, where the PDF text layer
+  // places both company names on the same visual line.
+  if(!customer){
+    const m=t.match(/Sold To\s*:\s*XTO ENERGY INC/i);
+    if(m) customer="XTO ENERGY INC";
+  }
+  if(!shipTo){
+    const m=t.match(/Ship To\s*:\s*XTO ENERGY INC/i);
+    if(m) shipTo="XTO ENERGY INC";
+  }
+  if(!shipToWell){
+    const m=t.match(/Ship To\s*:\s*XTO ENERGY INC\s+(.{2,80}?)(?=\s+Odessa Separator Inc)/i);
+    if(m) shipToWell=m[1].replace(/\s+/g," ").replace(/,$/,"").trim();
   }
 
   const contactLine=lines.find(x=>/^Contact\s*:/i.test(x))||"";
