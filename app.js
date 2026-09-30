@@ -129,7 +129,7 @@ function columnBlockFromLayout(label){
   const right=Math.max(labelX, otherX==null ? labelX+500 : otherX);
   const gap=20;
   const rows=page.rows
-    .filter(r=>r.y<rowY && r.y>rowY-150)
+    .filter(r=>r.y>rowY && r.y<rowY+150)
     .map(r=>{
       const texts=r.items.filter(it=>{
         if(isSold){
@@ -263,25 +263,39 @@ function parseSO(text){
     soldTo=soldTo||customer;
     shipTo=shipTo||customer;
   }
-  // Final well fallback: in Odessa SOs the well is commonly the line
-  // immediately below the company in the Sold To / Ship To block.
-  if(!shipToWell || !soldToWell){
+  // Odessa SO convention: the well name is in the SHIP TO block,
+  // immediately below the customer/company line. Do not infer a well from
+  // Sold To because the next line there is normally the billing address.
+  soldToWell="";
+  if(!shipToWell){
     for(const page of state.pdfLayout||[]){
       for(const row of page.rows){
         const rt=normalize(row.text);
         if(rt!=="SHIP TO:" && rt!=="SHIP TO") continue;
-        const nextRows=page.rows.filter(r=>r.y<row.y && r.y>row.y-220);
+
+        // PDF coordinates increase downward. Look only BELOW the Ship To
+        // header and stay inside the Ship To column.
+        const labelItem=row.items.find(it=>normalize(it.text).includes("SHIP TO"));
+        const soldItem=row.items.find(it=>normalize(it.text).includes("SOLD TO"));
+        const minX=soldItem ? soldItem.x+20 : (labelItem ? labelItem.x-10 : 0);
+        const nextRows=page.rows
+          .filter(r=>r.y>row.y && r.y<row.y+120)
+          .map(r=>({
+            y:r.y,
+            text:r.items
+              .filter(it=>it.x>=minX)
+              .sort((a,b)=>a.x-b.x)
+              .map(it=>it.text).join(" ").replace(/\s+/g," ").trim()
+          }))
+          .filter(r=>r.text);
+
+        // First non-address line is the company; the next suitable line is
+        // the well. This avoids interpreting "810 HOUSTON STREET" as a well.
         const candidates=nextRows.map(r=>cleanPartyLine(r.text)).filter(x=>x && !isAddressLine(x));
-        const well=candidates.find(x=>looksLikeWell(x));
-        if(well && !shipToWell) shipToWell=well;
-      }
-      for(const row of page.rows){
-        const rt=normalize(row.text);
-        if(rt!=="SOLD TO:" && rt!=="SOLD TO") continue;
-        const nextRows=page.rows.filter(r=>r.y<row.y && r.y>row.y-220);
-        const candidates=nextRows.map(r=>cleanPartyLine(r.text)).filter(x=>x && !isAddressLine(x));
-        const well=candidates.find(x=>looksLikeWell(x));
-        if(well && !soldToWell) soldToWell=well;
+        if(candidates.length>1){
+          const well=candidates.slice(1).find(x=>looksLikeWell(x));
+          if(well) shipToWell=well;
+        }
       }
     }
   }

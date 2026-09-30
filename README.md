@@ -120,3 +120,6 @@ The SO parser now prioritizes the explicit Odessa note format `Delivery: M/D/YYY
 
 ### V3.4 — Well extraction
 The PDF parser now treats the line immediately below the company in the Sold To / Ship To party block as a potential well name. It recognizes well names such as `NAIL TILLMAN W1P 416H` and `JORDAN 23-24 2814H`, while excluding address/header lines. Cache-busting was also updated to `app.js?v=3.4`.
+
+### V3.5 — Ship To Well extraction
+Odessa Sales Orders place the well on the line immediately below the company in the Ship To block. The parser now reads rows below the Ship To header, keeps Sold To billing-address rows out of well detection, and does not infer a well from Sold To.
