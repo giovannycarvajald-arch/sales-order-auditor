@@ -123,3 +123,6 @@ The PDF parser now treats the line immediately below the company in the Sold To 
 
 ### V3.5 — Ship To Well extraction
 Odessa Sales Orders place the well on the line immediately below the company in the Ship To block. The parser now reads rows below the Ship To header, keeps Sold To billing-address rows out of well detection, and does not infer a well from Sold To.
+
+### V3.6 Diamondback special case
+Diamondback does not use the normal STAMP phrases. The audit accepts and requires the documented `Please provide AFE & GL Account` note instead. If that note is present, the STAMP/AFE check passes even if Diamondback appears in the procedure STAMP list. If it is absent, the audit reports an error.
