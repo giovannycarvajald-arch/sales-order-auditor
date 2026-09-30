@@ -116,3 +116,7 @@ Procedure sections are parsed independently by TAXABLE/STAMP/DISCOUNT/CONFIRMATI
 
 ### V3.2 Delivery extraction
 The SO parser now prioritizes the explicit Odessa note format `Delivery: M/D/YYYY h:mm AM/PM` when extracting Delivery Date and Delivery Time. The detected line is also shown in Delivery Text as source context.
+
+
+### V3.4 — Well extraction
+The PDF parser now treats the line immediately below the company in the Sold To / Ship To party block as a potential well name. It recognizes well names such as `NAIL TILLMAN W1P 416H` and `JORDAN 23-24 2814H`, while excluding address/header lines. Cache-busting was also updated to `app.js?v=3.4`.

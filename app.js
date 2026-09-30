@@ -164,28 +164,56 @@ function isAddressLine(x){
     /^432[-\s]/.test(n) ||
     /^SO\d+/.test(n);
 }
+function looksLikeWell(x){
+  const n=normalize(x);
+  if(!n || isAddressLine(n)) return false;
+  // Odessa well names normally contain at least one digit and often a final
+  // well designator such as H, ST, CT, etc. Keep this intentionally broad.
+  if(!/\d/.test(n)) return false;
+  if(/^(?:\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{1,2}:\d{2})/.test(n)) return false;
+  if(/^(?:DELIVERY|SHIP DATES?|SALES PERSON|CONTACT|CUSTOMER P\/?O|INVENTORY|DELIVERY TICKET|SHIPPING METHOD)/i.test(n)) return false;
+  return true;
+}
+
 function extractCompanyAndWell(label, fallbackText){
   const block=columnBlockFromLayout(label);
   if(block.length){
-    const useful=block.map(x=>cleanPartyLine(x.text)).filter(x=>!isAddressLine(x));
+    const useful=[];
+    for(const r of block){
+      const candidate=cleanPartyLine(r.text);
+      if(!candidate || isAddressLine(candidate)) continue;
+      if(/^(?:DELIVERY TICKET|SHIPPING METHOD|CUSTOMER P\/?O|INVENTORY LOCATION|DELIVERY|SHIP DATES?|SALES PERSON|CONTACT)\b/i.test(candidate)) break;
+      useful.push(candidate);
+      if(useful.length>=3) break;
+    }
     const company=useful[0]||"";
     let well="";
-    for(let i=1;i<useful.length;i++){
-      const candidate=useful[i];
-      // A well can appear in either party column. Do not assume it is only Ship To.
-      if(candidate && !/^(FORT WORTH|ODESSA|TX|TEXAS)\b/i.test(candidate)) { well=candidate; break; }
+    for(const candidate of useful.slice(1)){
+      if(looksLikeWell(candidate)){ well=candidate; break; }
     }
     return {company,well};
   }
 
-  // Text-layer fallback: look at the actual label and capture the first
-  // company line plus a possible well line before the next known block.
-  const flat=String(fallbackText||"").replace(/\s+/g," ");
+  // Text-layer fallback. Look at the label, then the company and the next
+  // non-address line. This handles PDFs where the column coordinates are
+  // missing or the text is emitted in an unusual order.
+  const raw=String(fallbackText||"");
   const lab=label.replace(/\s+/g," ");
-  const next=label.toLowerCase()==="sold to" ? "Ship To" : "Odessa Separator Inc";
-  const rx=new RegExp(lab+"\\s*:\\s*(XTO ENERGY INC|[A-Z][A-Z0-9 &'./-]{2,80}?)(?:\\s+(.{2,80}?))?(?=\\s+"+next+")","i");
+  const other=label.toLowerCase()==="sold to" ? "Ship To" : "(?:Delivery Ticket|Odessa Separator Inc|Shipping Method)";
+  const flat=raw.replace(/\s+/g," ");
+  const rx=new RegExp(lab+"\\s*:?\\s*(.{2,160}?)(?=\\s+"+other+")","i");
   const m=flat.match(rx);
-  return {company:m?cleanPartyLine(m[1]):"",well:m&&m[2]&&!isAddressLine(m[2])?cleanPartyLine(m[2]):""};
+  if(m){
+    const chunk=cleanPartyLine(m[1]);
+    // Prefer a known company at the start of the block.
+    const companyMatch=chunk.match(/^(XTO ENERGY INC|BTA OIL & GAS|COTERRA(?: ENERGY)?|DIAMONDBACK(?: ENERGY)?|APACHE(?: CORP| CORPORATION)?|CHEVRON(?: USA)?|EXXON MOBIL|[A-Z][A-Z0-9 &'./-]{2,80}?)(?=\s|$)/i);
+    const company=companyMatch?cleanPartyLine(companyMatch[1]):cleanPartyLine(chunk.split(/\s+(?=\d+\s)/)[0]||chunk);
+    const rest=chunk.slice(company.length).trim();
+    const parts=rest.split(/\s+(?=[A-Z][A-Z0-9 &'./-]*\d)/).map(cleanPartyLine).filter(Boolean);
+    const well=parts.find(looksLikeWell)||"";
+    return {company,well};
+  }
+  return {company:"",well:""};
 }
 
 function firstMatch(text, regex){
@@ -235,13 +263,27 @@ function parseSO(text){
     soldTo=soldTo||customer;
     shipTo=shipTo||customer;
   }
-  if(!shipToWell){
-    const m=t.match(/Ship To\s*:\s*(?:XTO ENERGY INC)\s+(.{2,80}?)(?=\s+Odessa Separator Inc)/i);
-    if(m && !isAddressLine(m[1])) shipToWell=cleanPartyLine(m[1]);
-  }
-  if(!soldToWell){
-    const m=t.match(/Sold To\s*:\s*(?:XTO ENERGY INC)\s+(.{2,80}?)(?=\s+810\s+HOUSTON STREET)/i);
-    if(m && !isAddressLine(m[1])) soldToWell=cleanPartyLine(m[1]);
+  // Final well fallback: in Odessa SOs the well is commonly the line
+  // immediately below the company in the Sold To / Ship To block.
+  if(!shipToWell || !soldToWell){
+    for(const page of state.pdfLayout||[]){
+      for(const row of page.rows){
+        const rt=normalize(row.text);
+        if(rt!=="SHIP TO:" && rt!=="SHIP TO") continue;
+        const nextRows=page.rows.filter(r=>r.y<row.y && r.y>row.y-220);
+        const candidates=nextRows.map(r=>cleanPartyLine(r.text)).filter(x=>x && !isAddressLine(x));
+        const well=candidates.find(x=>looksLikeWell(x));
+        if(well && !shipToWell) shipToWell=well;
+      }
+      for(const row of page.rows){
+        const rt=normalize(row.text);
+        if(rt!=="SOLD TO:" && rt!=="SOLD TO") continue;
+        const nextRows=page.rows.filter(r=>r.y<row.y && r.y>row.y-220);
+        const candidates=nextRows.map(r=>cleanPartyLine(r.text)).filter(x=>x && !isAddressLine(x));
+        const well=candidates.find(x=>looksLikeWell(x));
+        if(well && !soldToWell) soldToWell=well;
+      }
+    }
   }
 
   const contactLine=lines.find(x=>/^Contact\s*:/i.test(x))||"";
