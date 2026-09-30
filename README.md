@@ -112,3 +112,7 @@ Procedure sections are now parsed independently by locating TAXABLE, STAMP, DISC
 
 ### V3.8 Procedure parser fix
 Procedure sections are parsed independently by TAXABLE/STAMP/DISCOUNT/CONFIRMATION CHECK boundaries. XTO ENERGY is canonicalized so XTO, XTO ENERGY and XTO ENERGY INC on a Sales Order match the Procedure. The Procedure load status now explicitly reports whether XTO was found in TAXABLE and STAMP.
+
+
+### V3.1 Delivery extraction
+The SO parser now prioritizes the explicit Odessa note format `Delivery: M/D/YYYY h:mm AM/PM` when extracting Delivery Date and Delivery Time. The detected line is also shown in Delivery Text as source context.
