@@ -335,7 +335,8 @@ function parseSO(text){
   setValue("notes",
     /PLEASE GET STAMPED/i.test(noteText) ? "PLEASE GET STAMPED" :
     /GET THE STAMP!/i.test(noteText) ? "GET THE STAMP!" :
-    /GET STAMP!/i.test(noteText) ? "GET STAMP!" : ""
+    /GET STAMP!/i.test(noteText) ? "GET STAMP!" :
+    /PLEASE PROVIDE AFE\s*&\s*GL ACCOUNT/i.test(noteText) ? "PLEASE PROVIDE AFE & GL ACCOUNT" : ""
   );
 
   // Totals in Odessa PDFs can be stacked vertically:
@@ -755,7 +756,7 @@ function runAudit(){
   addResult(r,"Cálculo de TAXES",taxOK,taxDetail);
 
   const stampRequired=procedureReady ? procedureHas(d.customer,state.procedureRules.stamp) : false;
-  const stampOK=procedureReady ? (!stampRequired || hasPhrase(d.notes,["PLEASE GET STAMPED","GET STAMP!","GET THE STAMP!"])) : false;
+  const stampOK=procedureReady ? (!stampRequired || hasPhrase(d.notes,["PLEASE GET STAMPED","GET STAMP!","GET THE STAMP!","PLEASE PROVIDE AFE & GL ACCOUNT"])) : false;
   addResult(r,"Frase STAMP",stampOK,
     procedureReady
       ? (stampRequired ? `Procedure: ${state.procedureRules.version} requiere STAMP; la SO debe contener una frase STAMP en Notes. Si la regla proviene de EXXON MOBIL, aplica a XTO por la nota “ALL EXXON ORDERS WILL BE XTO”.` : "La empresa no está listada en STAMP del procedure.")
