@@ -129,14 +129,16 @@ function columnBlockFromLayout(label){
   const right=Math.max(labelX, otherX==null ? labelX+500 : otherX);
   const gap=20;
   const rows=page.rows
-    .filter(r=>r.y>rowY && r.y<rowY+150)
+    // PDF.js y-coordinates increase UPWARD, so rows below the label have
+    // smaller y values.
+    .filter(r=>r.y<rowY && r.y>rowY-150)
     .map(r=>{
       const texts=r.items.filter(it=>{
         if(isSold){
           if(otherX!=null) return it.x < otherX-gap && it.x >= labelX-gap;
           return it.x >= labelX-gap && it.x < labelX+330;
         }else{
-          if(otherX!=null) return it.x >= otherX-gap;
+          // Ship To column starts at its own label, not at the Sold To label.
           return it.x >= labelX-gap;
         }
       }).sort((a,b)=>a.x-b.x).map(it=>it.text);
@@ -275,16 +277,14 @@ function parseSO(text){
   if(!shipToWell){
     for(const page of state.pdfLayout||[]){
       for(const row of page.rows){
-        const rt=normalize(row.text);
-        if(rt!=="SHIP TO:" && rt!=="SHIP TO") continue;
+        const labelItem=row.items.find(it=>/^SHIP TO:?$/.test(normalize(it.text)));
+        if(!labelItem) continue;
 
-        // PDF coordinates increase downward. Look only BELOW the Ship To
-        // header and stay inside the Ship To column.
-        const labelItem=row.items.find(it=>normalize(it.text).includes("SHIP TO"));
-        const soldItem=row.items.find(it=>normalize(it.text).includes("SOLD TO"));
-        const minX=soldItem ? soldItem.x+20 : (labelItem ? labelItem.x-10 : 0);
+        // PDF.js y-coordinates increase upward. Look only BELOW the Ship To
+        // header (smaller y) and stay inside the Ship To column.
+        const minX=labelItem.x-10;
         const nextRows=page.rows
-          .filter(r=>r.y>row.y && r.y<row.y+120)
+          .filter(r=>r.y<row.y && r.y>row.y-120)
           .map(r=>({
             y:r.y,
             text:r.items
