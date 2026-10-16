@@ -129,16 +129,14 @@ function columnBlockFromLayout(label){
   const right=Math.max(labelX, otherX==null ? labelX+500 : otherX);
   const gap=20;
   const rows=page.rows
-    // PDF.js y-coordinates increase UPWARD, so rows below the label have
-    // smaller y values.
-    .filter(r=>r.y<rowY && r.y>rowY-150)
+    .filter(r=>r.y>rowY && r.y<rowY+150)
     .map(r=>{
       const texts=r.items.filter(it=>{
         if(isSold){
           if(otherX!=null) return it.x < otherX-gap && it.x >= labelX-gap;
           return it.x >= labelX-gap && it.x < labelX+330;
         }else{
-          // Ship To column starts at its own label, not at the Sold To label.
+          if(otherX!=null) return it.x >= otherX-gap;
           return it.x >= labelX-gap;
         }
       }).sort((a,b)=>a.x-b.x).map(it=>it.text);
@@ -210,14 +208,9 @@ function extractCompanyAndWell(label, fallbackText){
     // Prefer a known company at the start of the block.
     const companyMatch=chunk.match(/^(XTO ENERGY INC|BTA OIL & GAS|COTERRA(?: ENERGY)?|DIAMONDBACK(?: ENERGY)?|APACHE(?: CORP| CORPORATION)?|CHEVRON(?: USA)?|EXXON MOBIL|[A-Z][A-Z0-9 &'./-]{2,80}?)(?=\s|$)/i);
     const company=companyMatch?cleanPartyLine(companyMatch[1]):cleanPartyLine(chunk.split(/\s+(?=\d+\s)/)[0]||chunk);
-    // Everything after the company up to the first address (street number +
-    // street word, or City ST 12345) is the well. Do not split on "word
-    // followed by a digit token": that turns "MABEE MN 7 04SB" into "MABEE"
-    // and "MN 7 04SB".
     const rest=chunk.slice(company.length).trim();
-    const addrStart=rest.search(/\s+\d+\s+(?:[A-Z0-9.]+\s+)*?(?:STREET|ST|ROAD|RD|AVENUE|AVE|HIGHWAY|HWY|DRIVE|DR|LANE|LN|BOULEVARD|BLVD|PARKWAY|PKWY|WAY)\b|\s+[A-Z][A-Z .]*,?\s+(?:TX|OK|LA|CO|ND|NM|PA|KS|WY|UT)\s+\d{5}/i);
-    const wellText=cleanPartyLine(addrStart>=0 ? rest.slice(0,addrStart) : rest);
-    const well=looksLikeWell(wellText) ? wellText : "";
+    const parts=rest.split(/\s+(?=[A-Z][A-Z0-9 &'./-]*\d)/).map(cleanPartyLine).filter(Boolean);
+    const well=parts.find(looksLikeWell)||"";
     return {company,well};
   }
   return {company:"",well:""};
@@ -277,14 +270,16 @@ function parseSO(text){
   if(!shipToWell){
     for(const page of state.pdfLayout||[]){
       for(const row of page.rows){
-        const labelItem=row.items.find(it=>/^SHIP TO:?$/.test(normalize(it.text)));
-        if(!labelItem) continue;
+        const rt=normalize(row.text);
+        if(rt!=="SHIP TO:" && rt!=="SHIP TO") continue;
 
-        // PDF.js y-coordinates increase upward. Look only BELOW the Ship To
-        // header (smaller y) and stay inside the Ship To column.
-        const minX=labelItem.x-10;
+        // PDF coordinates increase downward. Look only BELOW the Ship To
+        // header and stay inside the Ship To column.
+        const labelItem=row.items.find(it=>normalize(it.text).includes("SHIP TO"));
+        const soldItem=row.items.find(it=>normalize(it.text).includes("SOLD TO"));
+        const minX=soldItem ? soldItem.x+20 : (labelItem ? labelItem.x-10 : 0);
         const nextRows=page.rows
-          .filter(r=>r.y<row.y && r.y>row.y-120)
+          .filter(r=>r.y>row.y && r.y<row.y+120)
           .map(r=>({
             y:r.y,
             text:r.items
