@@ -208,9 +208,14 @@ function extractCompanyAndWell(label, fallbackText){
     // Prefer a known company at the start of the block.
     const companyMatch=chunk.match(/^(XTO ENERGY INC|BTA OIL & GAS|COTERRA(?: ENERGY)?|DIAMONDBACK(?: ENERGY)?|APACHE(?: CORP| CORPORATION)?|CHEVRON(?: USA)?|EXXON MOBIL|[A-Z][A-Z0-9 &'./-]{2,80}?)(?=\s|$)/i);
     const company=companyMatch?cleanPartyLine(companyMatch[1]):cleanPartyLine(chunk.split(/\s+(?=\d+\s)/)[0]||chunk);
+    // Everything after the company up to the first address (street number +
+    // street word, or City ST 12345) is the well. Do not split on "word
+    // followed by a digit token": that turns "MABEE MN 7 04SB" into "MABEE"
+    // and "MN 7 04SB".
     const rest=chunk.slice(company.length).trim();
-    const parts=rest.split(/\s+(?=[A-Z][A-Z0-9 &'./-]*\d)/).map(cleanPartyLine).filter(Boolean);
-    const well=parts.find(looksLikeWell)||"";
+    const addrStart=rest.search(/\s+\d+\s+(?:[A-Z0-9.]+\s+)*?(?:STREET|ST|ROAD|RD|AVENUE|AVE|HIGHWAY|HWY|DRIVE|DR|LANE|LN|BOULEVARD|BLVD|PARKWAY|PKWY|WAY)\b|\s+[A-Z][A-Z .]*,?\s+(?:TX|OK|LA|CO|ND|NM|PA|KS|WY|UT)\s+\d{5}/i);
+    const wellText=cleanPartyLine(addrStart>=0 ? rest.slice(0,addrStart) : rest);
+    const well=looksLikeWell(wellText) ? wellText : "";
     return {company,well};
   }
   return {company:"",well:""};
