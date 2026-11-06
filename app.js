@@ -888,7 +888,15 @@ function runAudit(){
     const pnInNotes=notesNormalized.includes(normalize(x.pn));
     const reinstalledMention=/\b(REINSTALLED|REINSTALL|REUSED|RE-USED|REUTILIZED|REUTILIZADO|REINSTALADO|REINSTALADA)\b/.test(notesNormalized);
     const justifiedZero=Number(x.price)===0 && pnInNotes && reinstalledMention;
-    if(justifiedZero && lp!=null){
+    // REV021: ESP Vortex Desander sold to Permian Resources has a fixed
+    // special unit price of $3,333, overriding the standard Price List.
+    const permianVortexDesander=/PERMIAN RESOURCES/.test(normalize(d.customer)) &&
+      /ESP VORTEX DESANDER/.test(normalize(x.desc));
+    if(permianVortexDesander){
+      if(Math.abs(Number(x.price)-3333)>0.01){
+        priceErrors.push(`${x.pn}: ESP Vortex Desander para Permian Resources debe ser $3,333.00; SO ${money(x.price)}.`);
+      }
+    }else if(justifiedZero && lp!=null){
       reinstalledZeroItems.push({pn:x.pn,listPrice:lp});
     }else if(lp==null){
       // Special/custom part numbers may not be included in the standard OSI Price List.
@@ -1077,9 +1085,13 @@ function runAudit(){
   }
 
   if(/PERMIAN RESOURCES/.test(normalize(d.customer)) &&
-     hasDesc(/DESANDER|SAND LIFT/)){
-    addResult(r,"Permian Resources — precios especiales",true,
-      "REV021: verificar si aplica Desander $3,000 (Oxy Rock), Desander revendida $3,333, o Sand Lift con 10% de descuento y PN 710-0170-00 Ultramesh.","warning");
+     hasDesc(/ESP VORTEX DESANDER/)){
+    const vortexItems=d.items.filter(x=>/ESP VORTEX DESANDER/.test(normalize(x.desc)));
+    const wrong=vortexItems.filter(x=>Math.abs(Number(x.price)-3333)>0.01);
+    addResult(r,"Permian Resources — ESP Vortex Desander",wrong.length===0,
+      wrong.length
+        ? wrong.map(x=>`${x.pn}: precio SO ${money(x.price)}; precio especial REV021 $3,333.00.`).join(" | ")
+        : "REV021: ESP Vortex Desander para Permian Resources validado al precio especial de $3,333.00 por unidad.");
   }
 
   const cardFee=d.items.find(x=>x.pn==="1002-0002-00");
