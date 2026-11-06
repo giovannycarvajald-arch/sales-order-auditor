@@ -169,9 +169,16 @@ function isAddressLine(x){
 function looksLikeWell(x){
   const n=normalize(x);
   if(!n || isAddressLine(n)) return false;
-  // Odessa well names normally contain at least one digit and often a final
-  // well designator such as H, ST, CT, etc. Keep this intentionally broad.
+  // Reject fragments of the billing company/address that PDF text extraction
+  // can split into a separate token row (for example "INC 810").
+  if(/^(?:INC|LLC|CORP|CORPORATION|COMPANY)\s+\d+(?:\s+\d+)?$/.test(n)) return false;
+  if(/^(?:XTO|ENERGY|BTA|APACHE|DIAMONDBACK|ODESSA)\s+(?:INC|CORP|LLC)?\s*\d*$/i.test(n)) return false;
+  // A well must contain a number and enough identifying text to avoid
+  // treating a company suffix or a street-number fragment as its name.
   if(!/\d/.test(n)) return false;
+  const alphaTokens=n.split(/\s+/).filter(token=>/[A-Z]/.test(token));
+  const numberTokens=n.split(/\s+/).filter(token=>/\d/.test(token));
+  if(alphaTokens.length===0 || (alphaTokens.length===1 && numberTokens.length<2)) return false;
   if(/^(?:\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{1,2}:\d{2})/.test(n)) return false;
   if(/^(?:DELIVERY|SHIP DATES?|SALES PERSON|CONTACT|CUSTOMER P\/?O|INVENTORY|DELIVERY TICKET|SHIPPING METHOD)/i.test(n)) return false;
   return true;
