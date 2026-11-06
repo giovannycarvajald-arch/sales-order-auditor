@@ -42,6 +42,7 @@ $("addItemBtn").onclick = () => addItem();
 $("xlsxInput").onchange = loadPriceList;
 $("procedureInput").onchange = loadProcedure;
 $("saveDraftBtn").onclick = saveDraft;
+$("loadDraftBtn").onclick = loadDraft;
 $("exportHistoryBtn").onclick = exportHistory;
 $("clearHistoryBtn").onclick = () => {
   if(confirm("¿Borrar todo el historial local?")) { localStorage.removeItem("soAuditHistory"); renderHistory(); }
@@ -1129,10 +1130,20 @@ function saveDraft(){
 }
 function loadDraft(){
   try{
-    const d=JSON.parse(localStorage.getItem("soDraft")||"null"); if(!d)return;
+    const d=JSON.parse(localStorage.getItem("soDraft")||"null");
+    if(!d){
+      $("status").textContent="No hay ningún borrador guardado.";
+      $("status").className="status";
+      return;
+    }
     ["soNumber","customer","soldTo","shipTo","soldToWell","shipToWell","contact","phone","deliveryDate","deliveryTime","deliveryText","notes","subtotal","tax","total"].forEach(k=>setValue(k,d[k]));
     $("itemsBody").innerHTML=""; (d.items||[]).forEach(x=>addItem(x.pn,x.desc,x.qty,x.price,x.discount||0));
-  }catch{}
+    $("status").textContent="Borrador local cargado correctamente.";
+    $("status").className="status ok";
+  }catch(err){
+    $("status").textContent="No se pudo cargar el borrador: "+err.message;
+    $("status").className="status bad";
+  }
 }
 function saveHistory(d,errorCount,results,suggestions){
   const h=JSON.parse(localStorage.getItem("soAuditHistory")||"[]");
@@ -1149,4 +1160,4 @@ function exportHistory(){
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="so-audit-history.json";a.click();URL.revokeObjectURL(a.href);
 }
 
-restorePriceList(); restoreProcedure(); loadDraft(); renderHistory();
+restorePriceList(); restoreProcedure(); renderHistory();
