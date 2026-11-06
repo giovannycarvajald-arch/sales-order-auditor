@@ -344,6 +344,18 @@ function parseSO(text){
     }
     extractedNotes=noteLines.join(" ").replace(/^Notes\s*:\s*/i,"").trim();
   }
+  // STAMP phrases may be highlighted outside the Notes block in Odessa SO PDFs.
+  // Keep the full Notes text, while also preserving any recognized stamp instruction
+  // found anywhere in the extracted PDF text (same behavior as the prior version).
+  const recognizedStampPhrase=[
+    "PLEASE GET STAMPED",
+    "GET STAMP!",
+    "GET THE STAMP!",
+    "PLEASE PROVIDE AFE & GL ACCOUNT"
+  ].find(phrase=>new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g,"\\  setValue("notes",extractedNotes);"),"i").test(t));
+  if(recognizedStampPhrase && !new RegExp(recognizedStampPhrase.replace(/[.*+?^${}()|[\]\\]/g,"\\  setValue("notes",extractedNotes);"),"i").test(extractedNotes)){
+    extractedNotes=(extractedNotes+" "+recognizedStampPhrase).trim();
+  }
   setValue("notes",extractedNotes);
 
   // Totals in Odessa PDFs can be stacked vertically:
