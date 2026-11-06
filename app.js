@@ -103,21 +103,29 @@ async function extractPDFText(file){
 }
 
 function findPartyColumn(label){
-  const target=normalize(label);
+  const target=normalize(label).replace(/:$/,"");
   for(const page of state.pdfLayout||[]){
     for(const row of page.rows){
-      const soldItem=row.items.find(it=>/^SOLD TO:?$/.test(normalize(it.text)));
-      const shipItem=row.items.find(it=>/^SHIP TO:?$/.test(normalize(it.text)));
-      if(!soldItem || !shipItem) continue;
+      const sorted=[...row.items].sort((a,b)=>a.x-b.x);
+      let labelItem=null;
+      for(let i=0;i<sorted.length;i++){
+        const one=normalize(sorted[i].text).replace(/:$/,"");
+        const two=i+1<sorted.length ? normalize(sorted[i].text+" "+sorted[i+1].text).replace(/:$/,"") : "";
+        if(one===target || two===target){ labelItem=sorted[i]; break; }
+      }
+      if(!labelItem) continue;
       const isSold=target==="SOLD TO";
-      return {
-        page,
-        rowY:row.y,
-        soldX:soldItem.x,
-        shipX:shipItem.x,
-        midpoint:(soldItem.x+shipItem.x)/2,
-        labelX:isSold?soldItem.x:shipItem.x
-      };
+      let otherX=null;
+      for(let i=0;i<sorted.length;i++){
+        const one=normalize(sorted[i].text).replace(/:$/,"");
+        const two=i+1<sorted.length ? normalize(sorted[i].text+" "+sorted[i+1].text).replace(/:$/,"") : "";
+        const opposite=isSold?"SHIP TO":"SOLD TO";
+        if(one===opposite || two===opposite){ otherX=sorted[i].x; break; }
+      }
+      if(otherX===null) continue;
+      const soldX=isSold?labelItem.x:otherX;
+      const shipX=isSold?otherX:labelItem.x;
+      return {page,rowY:row.y,soldX,shipX,midpoint:(soldX+shipX)/2,labelX:labelItem.x};
     }
   }
   return null;
@@ -227,7 +235,7 @@ function extractCompanyAndWell(label, fallbackText){
   if(m){
     const chunk=cleanPartyLine(m[1]);
     // Prefer a known company at the start of the block.
-    const companyMatch=chunk.match(/^(XTO ENERGY INC|BTA OIL & GAS|COTERRA(?: ENERGY)?|DIAMONDBACK(?: ENERGY)?|APACHE(?: CORP| CORPORATION)?|CHEVRON(?: USA)?|EXXON MOBIL|[A-Z][A-Z0-9 &'./-]{2,80}?)(?=\s|$)/i);
+    const companyMatch=chunk.match(/^(PIONEER NATURAL RESOURCES|XTO ENERGY INC|BTA OIL & GAS|COTERRA(?: ENERGY)?|DIAMONDBACK(?: ENERGY)?|APACHE(?: CORP| CORPORATION)?|CHEVRON(?: USA)?|EXXON MOBIL)(?=\s|$)/i);
     const company=companyMatch?cleanPartyLine(companyMatch[1]):cleanPartyLine(chunk.split(/\s+(?=\d+\s)/)[0]||chunk);
     const rest=chunk.slice(company.length).trim();
     const parts=rest.split(/\s+(?=[A-Z][A-Z0-9 &'./-]*\d)/).map(x=>String(x||"").trim()).filter(Boolean);
