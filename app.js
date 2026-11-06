@@ -724,16 +724,29 @@ function runAudit(){
   const hasInspection=d.items.some(x=>x.pn==="1004-0009-00");
   addResult(r,"Inspection Fee",!hasTrigger||hasInspection,hasTrigger&&!hasInspection?"ERROR: 1014-0142-00 requiere 1004-0009-00 Inspection Fee.":"Correcto.");
 
-  let priceOK=true, priceMissing=[];
+  let priceErrors=[], specialPNs=[];
   d.items.forEach(x=>{
     const lp=state.priceList.get(normalize(x.pn));
-    if(lp==null){ priceOK=false; priceMissing.push(`${x.pn}: PN NOT FOUND IN PRICE LIST`); }
-    else if(Math.abs(Number(lp)-Number(x.price))>0.01){priceOK=false;priceMissing.push(`${x.pn}: SO ${money(x.price)} vs lista ${money(lp)}`);}
+    if(lp==null){
+      // Special/custom part numbers may not be included in the standard OSI Price List.
+      // Keep them visible for manual vendor confirmation, but do not block approval.
+      specialPNs.push(x.pn);
+    }else if(Math.abs(Number(lp)-Number(x.price))>0.01){
+      priceErrors.push(`${x.pn}: SO ${money(x.price)} vs lista ${money(lp)}`);
+    }
   });
   const priceListReady=state.priceList.size>0;
-  const priceResultOK=priceListReady && priceOK;
-  addResult(r,"Precios vs Excel",priceResultOK,priceListReady ? (priceMissing.length?priceMissing.join(" | "):"Precios coinciden con la Price List cargada."):"ERROR: Price List no cargada; no se puede verificar contra Excel.");
-  if(!state.priceList.size) suggestions.push("Carga tu OSI LIST PRICE para activar la verificación de precios.");
+  const priceResultOK=priceListReady && priceErrors.length===0;
+  addResult(r,"Precios vs Excel",priceResultOK,
+    priceListReady
+      ? (priceErrors.length?priceErrors.join(" | "):"Todos los PN encontrados coinciden con la Price List cargada.")
+      : "ERROR: Price List no cargada; no se puede verificar contra Excel.");
+  if(specialPNs.length){
+    const uniqueSpecialPNs=[...new Set(specialPNs)];
+    addResult(r,"PN especiales no encontrados",true,
+      `Los siguientes PN no aparecen en la Price List: ${uniqueSpecialPNs.join(", ")}. Confirmar el nombre/descripción y el precio directamente con el vendedor antes de procesar la orden.`,"warning");
+  }
+  if(!priceListReady) suggestions.push("Carga tu OSI LIST PRICE para activar la verificación de precios.");
 
   const procedureReady=!!state.procedureRules;
   let taxOK=true, taxDetail="";
@@ -793,7 +806,7 @@ function runAudit(){
   const errors=r.filter(x=>!x.ok);
   $("resultBanner").textContent=errors.length?`🔴 NOT APPROVED — ${errors.length} error(es)`:"🟢 APPROVED — 0 errores";
   $("resultBanner").className="result "+(errors.length?"bad":"ok");
-  $("results").innerHTML=r.map(x=>`<div class="audit-row"><div class="name">${x.name}</div><div>${escapeHtml(x.detail)}</div><div class="${x.ok?'pass':'fail'}">${x.ok?'✓ OK':'✕ ERROR'}</div></div>`).join("");
+  $("results").innerHTML=r.map(x=>`<div class="audit-row"><div class="name">${x.name}</div><div>${escapeHtml(x.detail)}</div><div class="${x.kind==='warning'?'obs':(x.ok?'pass':'fail')}">${x.kind==='warning'?'⚠ REVIEW':(x.ok?'✓ OK':'✕ ERROR')}</div></div>`).join("");
   $("suggestions").innerHTML=suggestions.length?`<div class="suggestions"><strong>Correcciones / observaciones</strong><ul>${suggestions.map(x=>`<li>${escapeHtml(x)}</li>`).join("")}</ul></div>`:"";
   saveHistory(d,errors.length,r,suggestions);
 }
