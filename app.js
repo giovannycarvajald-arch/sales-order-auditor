@@ -575,14 +575,30 @@ function loadPriceList(e){
       if(!map.size) throw new Error("No se encontraron precios válidos en Pricing_UnitPrice0.");
       state.priceList=map;
       localStorage.setItem("soPriceList_v2",JSON.stringify([...map.entries()]));
-      localStorage.setItem("soPriceListMeta_v2",JSON.stringify({fileName:file.name,sheetName,pnKey,priceKey,count:map.size}));
+      localStorage.setItem("soPriceListMeta_v2",JSON.stringify({fileName:file.name,sheetName,pnKey,priceKey,count:map.size,loadedAt:new Date().toISOString()}));
       localStorage.removeItem("soPriceList");
       document.querySelectorAll(".pn").forEach(x=>updateListPriceRow({target:x}));
       $("priceListStatus").textContent=`🟢 Price List cargada: ${map.size.toLocaleString()} PN | Hoja: ${sheetName} | ${priceKey}`;
       $("priceListStatus").className="status ok";
-    }catch(err){ $("priceListStatus").textContent="❌ No se pudo leer el Excel: "+err.message; $("priceListStatus").className="status bad"; }
+      renderConfigurationStatus();
+    }catch(err){ $("priceListStatus").textContent="❌ No se pudo leer el Excel: "+err.message; $("priceListStatus").className="status bad"; renderConfigurationStatus(); }
   };
   reader.readAsArrayBuffer(file);
+}
+
+function renderConfigurationStatus(){
+  const priceMeta=JSON.parse(localStorage.getItem("soPriceListMeta_v2")||"null");
+  const procedureMeta=JSON.parse(localStorage.getItem("soaProcedureMeta_v2")||"null");
+  const priceReady=state.priceList instanceof Map && state.priceList.size>0;
+  const procedureReady=!!state.procedureRules;
+  const complete=priceReady && procedureReady;
+  const details=[];
+  details.push('<div class="config-file"><span class="config-dot '+(priceReady?"ready":"missing")+'"></span><div><strong>Price List</strong><small>'+(priceReady?(escapeHtml(priceMeta?.fileName||"Excel cargado")+" · "+(priceMeta?.count||state.priceList.size).toLocaleString()+" PN"+(priceMeta?.sheetName?" · Hoja "+escapeHtml(priceMeta.sheetName):"")):"Pendiente de cargar")+'</small></div></div>');
+  details.push('<div class="config-file"><span class="config-dot '+(procedureReady?"ready":"missing")+'"></span><div><strong>Sales Order Procedure</strong><small>'+(procedureReady?(escapeHtml(procedureMeta?.fileName||"Procedure cargado")+" · "+escapeHtml(state.procedureRules.version||"Versión no identificada")):"Pendiente de cargar")+'</small></div></div>');
+  const box=$("configurationStatus");
+  if(!box) return;
+  box.className="config-status "+(complete?"complete":"incomplete");
+  box.innerHTML='<div class="config-heading"><div><strong>'+(complete?"✓ CONFIGURACIÓN COMPLETA":"⚠ CONFIGURACIÓN INCOMPLETA")+'</strong><small>'+(complete?"Los dos documentos están disponibles en este navegador. Ya puedes auditar Sales Orders.":"Carga los documentos pendientes para habilitar una auditoría confiable.")+'</small></div><span class="config-count">'+(Number(priceReady)+Number(procedureReady))+"/2"+'</span></div><div class="config-files">'+details.join("")+'</div><p class="config-footnote">Los archivos permanecen guardados localmente en este navegador y no se comparten con otros usuarios.</p>';
 }
 
 function restorePriceList(){
@@ -594,7 +610,8 @@ function restorePriceList(){
       ? `🟢 Price List local disponible: ${state.priceList.size.toLocaleString()} PN${meta?.sheetName?` | ${meta.sheetName}`:""}`
       : "No hay Price List cargada todavía.";
     $("priceListStatus").className=state.priceList.size?"status ok":"status";
-  }catch{ state.priceList=new Map(); $("priceListStatus").textContent="No hay Price List cargada todavía."; }
+    renderConfigurationStatus();
+  }catch{ state.priceList=new Map(); $("priceListStatus").textContent="No hay Price List cargada todavía."; renderConfigurationStatus(); }
 }
 
 function cleanProcedureName(s){
@@ -731,10 +748,12 @@ async function loadProcedure(e){
     const xtoStamp=rules.stamp.some(x=>/\bXTO\b/i.test(x));
     $("procedureStatus").textContent=`🟢 Procedure cargado: ${file.name} | ${rules.version} | ${total} reglas (${rules.taxable.length} taxable, ${rules.stamp.length} stamp, ${rules.discounts.length} discount) | XTO TAXABLE: ${xtoTax?"SI":"NO"} | XTO STAMP: ${xtoStamp?"SI":"NO"}`;
     $("procedureStatus").className="status ok";
+    renderConfigurationStatus();
   }catch(err){
     state.procedureRules=null;
     $("procedureStatus").textContent="❌ No se pudo leer el procedure: "+err.message;
     $("procedureStatus").className="status bad";
+    renderConfigurationStatus();
   }
 }
 
@@ -754,11 +773,13 @@ function restoreProcedure(){
       }
       $("procedureStatus").textContent=`🟢 Procedure local disponible: ${p.version}${meta?.fileName?` | ${meta.fileName}`:""} | ${p.taxable.length} taxable · ${p.stamp.length} stamp · ${p.discounts.length} discount`;
       $("procedureStatus").className="status ok";
+      renderConfigurationStatus();
       return;
     }
   }catch{}
   $("procedureStatus").textContent="Carga el Sales Order Procedure para activar las reglas dinámicas.";
   $("procedureStatus").className="status";
+  renderConfigurationStatus();
 }
 
 async function analyzePDF(){
