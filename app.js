@@ -744,7 +744,7 @@ function restoreProcedure(){
       state.procedureRules=JSON.parse(raw);
       const meta=JSON.parse(localStorage.getItem("soaProcedureMeta_v2")||"null");
       const p=state.procedureRules;
-      const revision=Number((String(p.version||"").match(/\\d+/)||[])[0]||0);
+      const revision=Number((String(p.version||"").match(/\d+/)||[])[0]||0);
       if(revision<21){
         state.procedureRules=null;
         $("procedureStatus").textContent=`⚠ El Procedure guardado es ${p.version||"una versión anterior"}. Carga el PDF REV021 para activar las reglas vigentes.`;
