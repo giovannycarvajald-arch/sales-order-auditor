@@ -333,13 +333,18 @@ function parseSO(text){
     if(!currentDeliveryText) setValue("deliveryText", `${sourceLabel}: ${date}${time ? ` ${time}` : ""}`);
   }
 
-  const noteText=t;
-  setValue("notes",
-    /PLEASE GET STAMPED/i.test(noteText) ? "PLEASE GET STAMPED" :
-    /GET THE STAMP!/i.test(noteText) ? "GET THE STAMP!" :
-    /GET STAMP!/i.test(noteText) ? "GET STAMP!" :
-    /PLEASE PROVIDE AFE\s*&\s*GL ACCOUNT/i.test(noteText) ? "PLEASE PROVIDE AFE & GL ACCOUNT" : ""
-  );
+  // Preserve the complete Notes section for documented zero-charge/reinstalled items.
+  const notesIdx=lines.findIndex(x=>/^Notes\s*:/i.test(x));
+  let extractedNotes="";
+  if(notesIdx>=0){
+    const noteLines=[];
+    for(let i=notesIdx;i<lines.length;i++){
+      if(i>notesIdx && /^(?:Subtotal|Tax|Total|Sign|Date)\s*$/i.test(lines[i])) break;
+      noteLines.push(lines[i]);
+    }
+    extractedNotes=noteLines.join(" ").replace(/^Notes\s*:\s*/i,"").trim();
+  }
+  setValue("notes",extractedNotes);
 
   // Totals in Odessa PDFs can be stacked vertically:
   // Total -> amount -> Tax -> amount -> Subtotal -> amount.
@@ -393,14 +398,17 @@ function parseSO(text){
     // This intentionally does not require it to be at the end of the segment,
     // because "Ship Dates" follows every item in the Odessa PDF.
     const priceMatch=segment.match(/(?:^|\s)(\d+(?:\.\d+)?)\s+([\d,]+\.\d{2})\s*\/EA(?:\s+(\d+(?:\.\d+)?)(?:%)?)?\s+([\d,]+\.\d{2})(?:\s|$)/);
-    if(!priceMatch) return;
+    // Some SOs leave Unit Price blank and show only Amount $0.00 for a reinstalled tool.
+    const zeroAmountMatch=!priceMatch ? segment.match(/(?:^|\s)(\d+(?:\.\d+)?)\s+0\.00(?:\s|$)/) : null;
+    if(!priceMatch && !zeroAmountMatch) return;
 
-    const qty=Number(priceMatch[1]);
-    const price=Number(priceMatch[2].replace(/,/g,""));
-    const discount=priceMatch[3]==null?0:Number(priceMatch[3]);
-    const amount=Number(priceMatch[4].replace(/,/g,""));
+    const rowMatch=priceMatch||zeroAmountMatch;
+    const qty=Number(rowMatch[1]);
+    const price=priceMatch ? Number(priceMatch[2].replace(/,/g,"")) : 0;
+    const discount=priceMatch && priceMatch[3]!=null ? Number(priceMatch[3]) : 0;
+    const amount=priceMatch ? Number(priceMatch[4].replace(/,/g,"")) : 0;
 
-    let desc=segment.slice(0,priceMatch.index + (priceMatch[0].match(/^\s*/)?.[0].length||0)).trim();
+    let desc=segment.slice(0,rowMatch.index + (rowMatch[0].match(/^\s*/)?.[0].length||0)).trim();
 
     // Remove Rev immediately before Qty when present.
     const rev=desc.match(/^(.*)\s+(\d+)\s*$/);
@@ -731,12 +739,17 @@ function runAudit(){
   const hasInspection=d.items.some(x=>x.pn==="1004-0009-00");
   addResult(r,"Inspection Fee",!hasTrigger||hasInspection,hasTrigger&&!hasInspection?"ERROR: 1014-0142-00 requiere 1004-0009-00 Inspection Fee.":"Correcto.");
 
-  let priceErrors=[], specialPNs=[];
+  let priceErrors=[], specialPNs=[], reinstalledZeroItems=[];
+  const notesNormalized=normalize(d.notes);
   d.items.forEach(x=>{
     const lp=state.priceList.get(normalize(x.pn));
-    if(lp==null){
+    const pnInNotes=notesNormalized.includes(normalize(x.pn));
+    const reinstalledMention=/\b(REINSTALLED|REINSTALL|REUSED|RE-USED|REUTILIZED|REUTILIZADO|REINSTALADO|REINSTALADA)\b/.test(notesNormalized);
+    const justifiedZero=Number(x.price)===0 && pnInNotes && reinstalledMention;
+    if(justifiedZero && lp!=null){
+      reinstalledZeroItems.push({pn:x.pn,listPrice:lp});
+    }else if(lp==null){
       // Special/custom part numbers may not be included in the standard OSI Price List.
-      // Keep them visible for manual vendor confirmation, but do not block approval.
       specialPNs.push(x.pn);
     }else if(Math.abs(Number(lp)-Number(x.price))>0.01){
       priceErrors.push(`${x.pn}: SO ${money(x.price)} vs lista ${money(lp)}`);
@@ -752,6 +765,10 @@ function runAudit(){
     const uniqueSpecialPNs=[...new Set(specialPNs)];
     addResult(r,"PN especiales no encontrados",true,
       `Los siguientes PN no aparecen en la Price List: ${uniqueSpecialPNs.join(", ")}. Confirmar el nombre/descripción y el precio directamente con el vendedor antes de procesar la orden.`,"warning");
+  }
+  if(reinstalledZeroItems.length){
+    addResult(r,"Herramienta reutilizada / reinstalada",true,
+      "Precio $0.00 aceptado porque las notas de la SO identifican el mismo PN como REINSTALLED/REUSED. Verificar que la herramienta fue reinstalada y que no corresponde cobrar una nueva unidad. PN: "+reinstalledZeroItems.map(x=>x.pn+" (precio de lista "+money(x.listPrice)+")").join(" | "),"warning");
   }
   if(!priceListReady) suggestions.push("Carga tu OSI LIST PRICE para activar la verificación de precios.");
 
