@@ -159,6 +159,7 @@ function cleanPartyLine(x){
 function isAddressLine(x){
   const n=normalize(x);
   return !n ||
+    /^(?:P\.?\s*O\.?\s+BOX)\s+\d+\b/.test(n) ||
     /^\d+\s+/.test(n) ||
     /\b(?:STREET|ST|ROAD|RD|AVENUE|AVE|HIGHWAY|HWY|DRIVE|DR|LANE|LN|BOULEVARD|BLVD|PARKWAY|PKWY|WAY)\b/.test(n) ||
     /\b(?:TX|OK|LA|CO|ND|NM|PA|KS|WY|UT)\s+\d{5}(?:-\d{4})?\b/.test(n) ||
@@ -183,7 +184,9 @@ function looksLikeWell(x){
   if(!/\d/.test(n)) return false;
   const alphaTokens=n.split(/\s+/).filter(token=>/[A-Z]/.test(token));
   const numberTokens=n.split(/\s+/).filter(token=>/\d/.test(token));
-  if(alphaTokens.length===0 || (alphaTokens.length===1 && numberTokens.length<2)) return false;
+  // Accept short but valid well names such as "SCRRU 207" (one word + one number).
+  // PO BOX address lines are explicitly excluded by isAddressLine above.
+  if(alphaTokens.length===0 || (alphaTokens.length===1 && numberTokens.length<1)) return false;
   if(/^(?:\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{1,2}:\d{2})/.test(n)) return false;
   if(/^(?:DELIVERY|SHIP DATES?|SALES PERSON|CONTACT|CUSTOMER P\/?O|INVENTORY|DELIVERY TICKET|SHIPPING METHOD)/i.test(n)) return false;
   return true;
