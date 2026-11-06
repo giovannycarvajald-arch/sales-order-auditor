@@ -719,7 +719,7 @@ async function loadProcedure(e){
   try{
     const text=await extractPDFText(file);
     const rules=parseProcedureLists(text,file.name);
-    if(Number((rules.version.match(/\\d+/)||[])[0]||0)<21)
+    if(Number((rules.version.match(/\d+/)||[])[0]||0)<21)
       throw new Error("La app ya está actualizada para REV021. Carga la versión REV021 o una posterior.");
     state.procedureFile=file;
     state.procedureRules=rules;
