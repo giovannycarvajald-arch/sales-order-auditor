@@ -84,7 +84,7 @@ async function extractPDFText(file){
 
     const rows=[];
     for(const item of items){
-      let row=rows.find(r=>Math.abs(r.y-item.y)<3);
+      let row=rows.find(r=>Math.abs(r.y-item.y)<6);
       if(!row){row={y:item.y,items:[]};rows.push(row);}
       row.items.push(item);
     }
@@ -106,15 +106,18 @@ function findPartyColumn(label){
   const target=normalize(label);
   for(const page of state.pdfLayout||[]){
     for(const row of page.rows){
-      const rowText=normalize(row.text);
-      if(!rowText.includes(target)) continue;
-      const labelItem=row.items.find(it=>normalize(it.text).includes(target));
-      if(!labelItem) continue;
-      const otherLabel= target.includes("SOLD TO") ? "SHIP TO" : "SOLD TO";
-      let otherX=null;
-      const otherItem=row.items.find(it=>normalize(it.text).includes(otherLabel));
-      if(otherItem) otherX=otherItem.x;
-      return {page,rowY:row.y,labelX:labelItem.x,otherX};
+      const soldItem=row.items.find(it=>/^SOLD TO:?$/.test(normalize(it.text)));
+      const shipItem=row.items.find(it=>/^SHIP TO:?$/.test(normalize(it.text)));
+      if(!soldItem || !shipItem) continue;
+      const isSold=target==="SOLD TO";
+      return {
+        page,
+        rowY:row.y,
+        soldX:soldItem.x,
+        shipX:shipItem.x,
+        midpoint:(soldItem.x+shipItem.x)/2,
+        labelX:isSold?soldItem.x:shipItem.x
+      };
     }
   }
   return null;
@@ -123,26 +126,20 @@ function findPartyColumn(label){
 function columnBlockFromLayout(label){
   const found=findPartyColumn(label);
   if(!found) return [];
-  const {page,rowY,labelX,otherX}=found;
+  const {page,rowY,midpoint,soldX,shipX}=found;
   const isSold=normalize(label)==="SOLD TO";
-  const left=Math.min(labelX, otherX==null ? labelX+500 : otherX);
-  const right=Math.max(labelX, otherX==null ? labelX+500 : otherX);
-  const gap=20;
   const rows=page.rows
     .filter(r=>r.y<rowY && r.y>rowY-150)
     .map(r=>{
       const texts=r.items.filter(it=>{
-        if(isSold){
-          if(otherX!=null) return it.x < otherX-gap && it.x >= labelX-gap;
-          return it.x >= labelX-gap && it.x < labelX+330;
-        }else{
-          // Ship To must start at its own column label. Using the Sold To
-          // label X-coordinate here also admitted text from the left column,
-          // which could make address fragments look like a well name.
-          return it.x >= labelX-gap;
-        }
+        // Split the page into two independent columns using the midpoint
+        // between the actual Sold To and Ship To headings. This prevents
+        // the left company from leaking into the Ship To result.
+        return isSold
+          ? it.x >= soldX-10 && it.x < midpoint
+          : it.x >= midpoint && it.x < (shipX+330);
       }).sort((a,b)=>a.x-b.x).map(it=>it.text);
-      return {y:r.y,text:texts.join(" ").replace(/\s+/g," ").trim()};
+      return {y:r.y,text:texts.join(" ").replace(/\\s+/g," ").trim()};
     })
     .filter(r=>r.text);
   return rows;
