@@ -660,8 +660,8 @@ function parseProcedureLists(text,fileName=""){
   // Preserve the operational instructions after the discount/tax section too.
   const extraInfoIdx=source.indexOf("EXTRA INFO",confirmationIdx);
   const extraInfo=extraInfoIdx>=0?source.slice(extraInfoIdx):"";
-  const revision=(String(fileName).match(/REV\\s*0*(\\d+)/i)||n.match(/REV\\s*0*(\\d+)/i)||[])[1];
-  const rev=revision?String(Number(revision)):"21";
+  const revisionMatch=String(fileName).match(/REV\\s*0*(\\d+)/i)||n.match(/REV\\s*0*(\\d+)/i);
+  const rev=revisionMatch?.[1]?String(Number(revisionMatch[1])):"21";
 
   return {
     version:`REV ${rev}`,
@@ -719,6 +719,8 @@ async function loadProcedure(e){
   try{
     const text=await extractPDFText(file);
     const rules=parseProcedureLists(text,file.name);
+    if(Number((rules.version.match(/\\d+/)||[])[0]||0)<21)
+      throw new Error("La app ya está actualizada para REV021. Carga la versión REV021 o una posterior.");
     state.procedureFile=file;
     state.procedureRules=rules;
     localStorage.setItem("soaProcedureRules_v2",JSON.stringify(rules));
@@ -742,7 +744,14 @@ function restoreProcedure(){
       state.procedureRules=JSON.parse(raw);
       const meta=JSON.parse(localStorage.getItem("soaProcedureMeta_v2")||"null");
       const p=state.procedureRules;
-      $("procedureStatus").textContent=`🟢 Procedure local disponible${meta?.fileName?` | ${meta.fileName}`:""} | ${p.taxable.length} taxable · ${p.stamp.length} stamp · ${p.discounts.length} discount`;
+      const revision=Number((String(p.version||"").match(/\\d+/)||[])[0]||0);
+      if(revision<21){
+        state.procedureRules=null;
+        $("procedureStatus").textContent=`⚠ El Procedure guardado es ${p.version||"una versión anterior"}. Carga el PDF REV021 para activar las reglas vigentes.`;
+        $("procedureStatus").className="status bad";
+        return;
+      }
+      $("procedureStatus").textContent=`🟢 Procedure local disponible: ${p.version}${meta?.fileName?` | ${meta.fileName}`:""} | ${p.taxable.length} taxable · ${p.stamp.length} stamp · ${p.discounts.length} discount`;
       $("procedureStatus").className="status ok";
       return;
     }
