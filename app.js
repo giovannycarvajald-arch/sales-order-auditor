@@ -352,7 +352,11 @@ function parseSO(text){
     "GET STAMP!",
     "GET THE STAMP!",
     "PLEASE PROVIDE AFE & GL ACCOUNT"
-  ].find(phrase=>new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g,"\\  setValue("notes",extractedNotes);"),"i").test(t));
+  ].find(phrase=>t.toUpperCase().includes(phrase));
+  if(recognizedStampPhrase && !extractedNotes.toUpperCase().includes(recognizedStampPhrase)){
+    extractedNotes=(extractedNotes+" "+recognizedStampPhrase).trim();
+  }
+  setValue("notes",extractedNotes);"),"i").test(t));
   if(recognizedStampPhrase && !new RegExp(recognizedStampPhrase.replace(/[.*+?^${}()|[\]\\]/g,"\\  setValue("notes",extractedNotes);"),"i").test(extractedNotes)){
     extractedNotes=(extractedNotes+" "+recognizedStampPhrase).trim();
   }
