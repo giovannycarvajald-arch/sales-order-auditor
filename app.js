@@ -1053,7 +1053,7 @@ function runAudit(){
   }
 
 
-  if(!procedureReady) suggestions.push("Carga el Sales Order Procedure REV20 para activar TAXABLE/STAMP/DISCOUNT dinámicos.");
+  if(!procedureReady) suggestions.push("Carga el Sales Order Procedure REV021 o una revisión posterior para activar TAXABLE/STAMP/DISCOUNT dinámicos.");
 
   const errors=r.filter(x=>!x.ok);
   $("resultBanner").textContent=errors.length?`🔴 NOT APPROVED — ${errors.length} error(es)`:"🟢 APPROVED — 0 errores";
