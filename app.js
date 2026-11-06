@@ -289,6 +289,23 @@ function parseSO(text){
   const soldBlock=extractCompanyAndWell("Sold To",t);
   const shipBlock=extractCompanyAndWell("Ship To",t);
 
+  // Some PDF layouts return the left-column company for both blocks when
+  // the two columns share a text row. Re-read each labelled block from the
+  // text layer and prefer an explicit, recognized company at that label.
+  function companyImmediatelyAfter(label){
+    const other=label==="Sold To" ? "Ship To" : "(?:Delivery Ticket|Shipping Method|Customer P\\/?O|Inventory Location)";
+    const re=new RegExp(label+"\\s*:?\\s*(.{2,180}?)(?=\\s+"+other+"\\b)","i");
+    const m=t.match(re);
+    if(!m) return "";
+    const block=m[1].replace(/\\s+/g," ").trim();
+    const known=block.match(/^(XTO ENERGY INC|PIONEER(?: NATURAL RESOURCES)?|EXXON MOBIL|BTA OIL & GAS|COTERRA(?: ENERGY)?|DIAMONDBACK(?: ENERGY)?|APACHE(?: CORP| CORPORATION)?|CHEVRON(?: USA)?)/i);
+    return known ? known[1].trim() : "";
+  }
+  const soldCompanyFromText=companyImmediatelyAfter("Sold To");
+  const shipCompanyFromText=companyImmediatelyAfter("Ship To");
+  if(soldCompanyFromText) soldBlock.company=soldCompanyFromText;
+  if(shipCompanyFromText) shipBlock.company=shipCompanyFromText;
+
   // Odessa SO structure: the company normally appears in both Sold To and
   // Ship To. The well can appear on the following line in the party block.
   // Customer must come from the company name, never from the address/well.
@@ -753,9 +770,13 @@ function runAudit(){
   addResult(r,"TAXES / STAMP / DISCOUNT / EXTRA INFO",true,"Revisión inicial ejecutada. Reglas específicas abajo.");
   const sold=customerKey(d.soldTo), ship=customerKey(d.shipTo);
   const companyOK=!sold||!ship||sold===ship;
-  addResult(r,"Sold To vs Ship To",companyOK && (!d.soldToWell || !d.shipToWell || normalize(d.soldToWell)===normalize(d.shipToWell)),
-    companyOK ? ((d.soldToWell&&d.shipToWell&&normalize(d.soldToWell)!==normalize(d.shipToWell)) ? "ERROR: well diferente entre Sold To y Ship To." : "Misma compañía / well consistente o no especificado.")
-      : "ERROR: compañías diferentes entre Sold To y Ship To.");
+  const wellsOK=!d.soldToWell||!d.shipToWell||normalize(d.soldToWell)===normalize(d.shipToWell);
+  const companyDetail=!companyOK
+    ? "ERROR: Sold To ("+d.soldTo+") y Ship To ("+d.shipTo+") son compañías diferentes. Confirmar con el vendedor antes de aprobar."
+    : "Compañías consistentes.";
+  addResult(r,"Sold To vs Ship To",companyOK && wellsOK,
+    !companyOK ? companyDetail
+      : (!wellsOK ? "ERROR: well diferente entre Sold To y Ship To." : "Misma compañía / well consistente o no especificado."));
   addResult(r,"Teléfono del contacto",!!d.phone,"Phone encontrado.");
 
   const de=deliveryExpected(d);
