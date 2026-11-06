@@ -150,6 +150,35 @@ function columnBlockFromLayout(label){
   return rows;
 }
 
+function companyFromColumnLayout(label){
+  const found=findPartyColumn(label);
+  if(!found) return "";
+  const {page,rowY,labelX,otherX}=found;
+  const isSold=normalize(label)==="SOLD TO";
+  const candidates=page.rows
+    .filter(r=>Math.abs(r.y-rowY)>2 && Math.abs(r.y-rowY)<65)
+    .map(r=>{
+      const items=r.items.filter(it=>{
+        if(isSold){
+          if(otherX!=null) return it.x>=labelX-8 && it.x<otherX-8;
+          return it.x>=labelX-8 && it.x<labelX+260;
+        }
+        return it.x>=labelX-8 && it.x<labelX+280;
+      }).sort((a,b)=>a.x-b.x);
+      return {y:r.y,text:items.map(it=>it.text).join(" ").replace(/\\s+/g," ").trim()};
+    })
+    .filter(r=>r.text)
+    .sort((a,b)=>Math.abs(a.y-rowY)-Math.abs(b.y-rowY));
+  // The company is the first non-address line in its own visual column.
+  for(const row of candidates){
+    const value=cleanPartyLine(row.text);
+    if(!value || isAddressLine(value)) continue;
+    if(/^(?:DELIVERY TICKET|SHIPPING METHOD|CUSTOMER P\\/?O|INVENTORY LOCATION)\\b/i.test(value)) continue;
+    return value;
+  }
+  return "";
+}
+
 function cleanPartyLine(x){
   return String(x||"").replace(/\s+/g," ").replace(/,$/,"").trim();
 }
@@ -303,12 +332,16 @@ function parseSO(text){
     const known=block.match(/^(XTO ENERGY INC|PIONEER(?: NATURAL RESOURCES)?|EXXON MOBIL|BTA OIL & GAS|COTERRA(?: ENERGY)?|DIAMONDBACK(?: ENERGY)?|APACHE(?: CORP| CORPORATION)?|CHEVRON(?: USA)?)/i);
     return known ? known[1].trim() : "";
   }
+  const soldCompanyFromLayout=companyFromColumnLayout("Sold To");
+  const shipCompanyFromLayout=companyFromColumnLayout("Ship To");
   const soldCompanyFromText=companyImmediatelyAfter("Sold To");
   const shipCompanyFromText=companyImmediatelyAfter("Ship To");
-  // Trust the independently bounded visual columns first. The flattened
-  // text layer can interleave the left and right columns on the same row.
-  if(!soldBlock.company && soldCompanyFromText) soldBlock.company=soldCompanyFromText;
-  if(!shipBlock.company && shipCompanyFromText) shipBlock.company=shipCompanyFromText;
+  // Company identity must come from the matching visual column. The flattened
+  // text layer places both company names on one row and is unsafe for Ship To.
+  if(soldCompanyFromLayout) soldBlock.company=soldCompanyFromLayout;
+  else if(!soldBlock.company && soldCompanyFromText) soldBlock.company=soldCompanyFromText;
+  if(shipCompanyFromLayout) shipBlock.company=shipCompanyFromLayout;
+  else if(!shipBlock.company && shipCompanyFromText) shipBlock.company=shipCompanyFromText;
 
   // Odessa SO structure: the company normally appears in both Sold To and
   // Ship To. The well can appear on the following line in the party block.
