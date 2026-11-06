@@ -4,7 +4,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
 
 const $ = id => document.getElementById(id);
-const state = { pdfFile:null, priceList:new Map(), items:[], procedureFile:null, procedureRules:null, pdfLayout:[] };
+const state = { pdfFile:null, priceList:new Map(), items:[], procedureFile:null, procedureRules:null, pdfLayout:[], shippingMethod:"" };
 
 const PN_REGEX = /^\d{2,4}-\d{4}-\d{2}(?:-\d{2})?$/;
 
@@ -225,6 +225,8 @@ function parseSO(text){
   const t=lines.join(" ");
 
   const so=firstMatch(t, /\bSO[-\s]?(\d{4,})\b/i);
+  const shippingMethodMatch=t.match(/Shipping\s+Method\s*:?\s*(Field\s+Service)\b/i);
+  state.shippingMethod=shippingMethodMatch?shippingMethodMatch[1].replace(/\s+/g," ").trim():"";
 
   // Phone formats seen on Odessa SOs include "+ 1 4322907927".
   const phone=firstMatch(t, /(\+\s*1\s*\d{10}|\+?1[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})/);
@@ -662,7 +664,7 @@ function getData(){
     soldToWell:$("soldToWell").value.trim(), shipToWell:$("shipToWell").value.trim(),
     contact:$("contact").value.trim(), phone:$("phone").value.trim(),
     date:$("deliveryDate").value, time:$("deliveryTime").value,
-    deliveryText:$("deliveryText").value.trim(), notes:$("notes").value.trim(),
+    deliveryText:$("deliveryText").value.trim(), shippingMethod:state.shippingMethod||"", notes:$("notes").value.trim(),
     subtotal:Number($("subtotal").value||0), tax:Number($("tax").value||0), total:Number($("total").value||0), items
   };
 }
@@ -698,6 +700,8 @@ function runAudit(){
   const deliveryItems=d.items.filter(x=>/DELIVERY\s+CHARGE|AFTER\s+HOURS\s+DELIVERY|END\s+USER\s+DELIVERY/i.test(x.desc)||x.pn==="1004-0002-00");
   const hasEndUserItem=deliveryItems.some(x=>/END\s+USER\s+DELIVERY/i.test(x.desc)||x.pn==="1004-0002-00");
   const hasAfterHoursItem=deliveryItems.some(x=>/AFTER\s+HOURS\s+DELIVERY/i.test(x.desc));
+  const pickupChargeItems=d.items.filter(x=>/PICK\s*UP\s+CHARGE|PICKUP\s+CHARGE/i.test(x.desc));
+  const fieldServicePickup=normalize(d.shippingMethod)==="FIELD SERVICE" && pickupChargeItems.length>0;
   const deliveryItemAmount=deliveryItems.reduce((sum,x)=>sum+(Number(x.amount)||Number(x.price||0)*Number(x.qty||1)),0);
   const deliveryPriceMatch=
     deliveryText.includes("AFTER HOURS") ? RULES.afterHoursDelivery :
@@ -705,7 +709,8 @@ function runAudit(){
     hasAfterHoursItem ? RULES.afterHoursDelivery :
     hasEndUserItem ? RULES.endUserDelivery : null;
   let delOK;
-  if(de.type==="UNKNOWN") delOK=true;
+  if(fieldServicePickup) delOK=true;
+  else if(de.type==="UNKNOWN") delOK=true;
   else if(de.type==="NONE") delOK=!deliveryPriceMatch && deliveryItems.length===0;
   else {
     const hasExpectedItem=de.type==="END USER" ? hasEndUserItem : hasAfterHoursItem;
@@ -715,10 +720,12 @@ function runAudit(){
     delOK=hasExpectedItem && (itemPriceOK || textPriceOK);
   }
   let deliveryDetail;
-  if(de.type==="UNKNOWN") deliveryDetail="No se pudo validar fecha/hora.";
-  else if(de.type==="NONE") deliveryDetail=`${de.type} — sin cargo. ${de.reason}`;
-  else deliveryDetail=`${de.type} — ${money(de.price)}. ${de.reason}${deliveryItems.length?` Se encontró en la SO: ${deliveryItems.map(x=>`${x.pn} ${x.desc} (${money(x.price)} x ${x.qty})`).join(" | ")}.`:" No se encontró un ítem de Delivery Charge correspondiente en la SO."}`;
-  addResult(r,"Delivery Charge",delOK,deliveryDetail);
+  if(fieldServicePickup){
+    deliveryDetail="Shipping Method: FIELD SERVICE. Se encontró "+pickupChargeItems.map(x=>x.pn+" "+x.desc+" ("+money(x.price)+" x "+x.qty+")").join(" | ")+". No se exige END USER DELIVERY para este caso. Verificar si el cliente recogerá la herramienta en OSI después de la reparación.";
+  }else if(de.type==="UNKNOWN") deliveryDetail="No se pudo validar fecha/hora.";
+  else if(de.type==="NONE") deliveryDetail=de.type+" — sin cargo. "+de.reason;
+  else deliveryDetail=de.type+" — "+money(de.price)+". "+de.reason+(deliveryItems.length?" Se encontró en la SO: "+deliveryItems.map(x=>x.pn+" "+x.desc+" ("+money(x.price)+" x "+x.qty+")").join(" | ")+".":" No se encontró un ítem de Delivery Charge correspondiente en la SO.");
+  addResult(r,"Delivery Charge",delOK,deliveryDetail,fieldServicePickup?"warning":"");
 
   const hasTrigger=d.items.some(x=>x.pn==="1014-0142-00");
   const hasInspection=d.items.some(x=>x.pn==="1004-0009-00");
