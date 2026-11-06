@@ -597,67 +597,55 @@ function cleanProcedureName(s){
   return normalize(String(s||"").replace(/[•\r\n]+/g," ").replace(/\s+/g," ").replace(/[.;]+$/g,"").trim());
 }
 
-function parseProcedureLists(text){
-  // Parse the Procedure by section boundaries instead of one large regex.
-  // This is more robust to PDF line breaks, page headers and formatting changes.
+function parseProcedureLists(text,fileName=""){
+  // REV021 moved this section to page 17 and renumbered it from section 7
+  // to section 2. Locate it by its stable title, not by page/section number.
   const n=normalize(text);
-  const heading="7. INFORMATION TO CONSIDER WHEN CREATING THE SALES ORDER";
+  const heading="INFORMATION TO CONSIDER WHEN CREATING THE SALES ORDER";
   const start=n.lastIndexOf(heading);
-  const source=start>=0 ? n.slice(start) : n;
+  const source=start>=0 ? n.slice(start+heading.length) : n;
 
   const taxableIdx=source.indexOf("TAXABLE");
-  const stampIdx=source.indexOf("STAMP", taxableIdx>=0 ? taxableIdx+7 : 0);
-  const discountIdx=source.indexOf("DISCOUNT", stampIdx>=0 ? stampIdx+5 : 0);
-  const confirmationIdx=source.indexOf("CONFIRMATION CHECK", discountIdx>=0 ? discountIdx+8 : 0);
+  const stampIdx=source.indexOf("STAMP",taxableIdx>=0?taxableIdx+7:0);
+  const discountIdx=source.indexOf("DISCOUNT",stampIdx>=0?stampIdx+5:0);
+  const confirmationIdx=source.indexOf("CONFIRMATION CHECK",discountIdx>=0?discountIdx+8:0);
 
-  if(taxableIdx<0 || stampIdx<0 || discountIdx<0 || confirmationIdx<0){
-    throw new Error("No se encontraron correctamente las secciones TAXABLE, STAMP, DISCOUNT y CONFIRMATION CHECK en el procedure.");
+  if(taxableIdx<0||stampIdx<0||discountIdx<0||confirmationIdx<0){
+    throw new Error("No se encontraron correctamente las secciones TAXABLE, STAMP, DISCOUNT y CONFIRMATION CHECK. Verifica que cargaste el Procedure REV021 o una revisión compatible.");
   }
 
-  const taxableText=source.slice(taxableIdx+7, stampIdx).trim();
-  const stampText=source.slice(stampIdx+5, discountIdx).trim();
-  const discountText=source.slice(discountIdx+8, confirmationIdx).trim();
-
-  const splitCustomers=(section)=>section
-    .split(",")
-    .map(cleanProcedureName)
-    .filter(Boolean);
-
+  const taxableText=source.slice(taxableIdx+7,stampIdx).trim();
+  const stampText=source.slice(stampIdx+5,discountIdx).trim();
+  const discountText=source.slice(discountIdx+8,confirmationIdx).trim();
+  const splitCustomers=section=>section.split(",").map(cleanProcedureName).filter(Boolean);
   const taxable=splitCustomers(taxableText);
   const stamp=splitCustomers(stampText);
 
   // Explicit Procedure relationships / aliases.
   const aliases=[];
-  const exxonToXto=/EXXON MOBIL\s*\(\s*ALL EXXON ORDERS WILL BE XTO\s*\)/i.test(source)
-    || /ALL EXXON ORDERS WILL BE XTO/i.test(source);
-
+  const exxonToXto=/EXXON MOBIL\\s*\\(\\s*ALL EXXON ORDERS WILL BE XTO\\s*\\)/i.test(source)
+    ||/ALL EXXON ORDERS WILL BE XTO/i.test(source);
   if(exxonToXto){
     aliases.push({from:"EXXON MOBIL",to:"XTO ENERGY",reason:"ALL EXXON ORDERS WILL BE XTO"});
-
-    // If the Procedure uses the Exxon wording instead of listing XTO directly,
-    // make the documented XTO target an actual rule in both relevant lists.
-    if(!taxable.some(x=>/\bXTO\b/.test(x))) taxable.push("XTO ENERGY");
-    if(!stamp.some(x=>/\bXTO\b/.test(x))) stamp.push("XTO ENERGY");
+    if(!taxable.some(x=>/\\bXTO\\b/.test(x))) taxable.push("XTO ENERGY");
+    if(!stamp.some(x=>/\\bXTO\\b/.test(x))) stamp.push("XTO ENERGY");
   }
 
-  // Current Procedures may list XTO ENERGY directly. Normalize all XTO variants
-  // into a canonical entry so "XTO ENERGY INC" on a Sales Order matches it.
-  const hasXtoTaxable=/\bXTO(?:\s+ENERGY)?(?:\s+INC\.?|\s+YELLOWJACKET)?\b/i.test(taxableText);
-  const hasXtoStamp=/\bXTO(?:\s+ENERGY)?(?:\s+INC\.?|\s+YELLOWJACKET)?\b/i.test(stampText);
-  if(hasXtoTaxable && !taxable.some(x=>/\bXTO\b/i.test(x))) taxable.push("XTO ENERGY");
-  if(hasXtoStamp && !stamp.some(x=>/\bXTO\b/i.test(x))) stamp.push("XTO ENERGY");
+  const hasXtoTaxable=/\\bXTO(?:\\s+ENERGY)?(?:\\s+INC\\.?|\\s+YELLOWJACKET)?\\b/i.test(taxableText);
+  const hasXtoStamp=/\\bXTO(?:\\s+ENERGY)?(?:\\s+INC\\.?|\\s+YELLOWJACKET)?\\b/i.test(stampText);
+  if(hasXtoTaxable&&!taxable.some(x=>/\\bXTO\\b/i.test(x))) taxable.push("XTO ENERGY");
+  if(hasXtoStamp&&!stamp.some(x=>/\\bXTO\\b/i.test(x))) stamp.push("XTO ENERGY");
 
-  // Discount entries: most use (25%), with THRU TUBING written as 25%.
+  // Discount entries: REV021 contains both "(25%)" and "THRU TUBING 25%" formats.
   const discounts=[];
-  const pctRe=/([^,]+?)\s*\((\d+(?:\.\d+)?)%\)/g;
+  const pctRe=/([^,]+?)\\s*\\((\\d+(?:\\.\\d+)?)%\\)/g;
   let pm;
   while((pm=pctRe.exec(discountText))){
     const name=cleanProcedureName(pm[1]);
     if(name) discounts.push({name,percent:Number(pm[2])});
   }
-  const noParen=[...discountText.matchAll(/(?:^|,)\s*(THRU TUBING)\s+(\d+(?:\.\d+)?)%/g)];
+  const noParen=[...discountText.matchAll(/(?:^|,)\\s*(THRU TUBING)\\s+(\\d+(?:\\.\\d+)?)%/g)];
   noParen.forEach(x=>discounts.push({name:cleanProcedureName(x[1]),percent:Number(x[2])}));
-
   const seenDiscount=new Set();
   const uniqueDiscounts=discounts.filter(x=>{
     const k=`${x.name}|${x.percent}`;
@@ -666,7 +654,11 @@ function parseProcedureLists(text){
     return true;
   });
 
-  const rev=(source.match(/\bREV\s+(\d+)\b/)||[])[1] || "20";
+  // Preserve the operational instructions after the discount/tax section too.
+  const extraInfoIdx=source.indexOf("EXTRA INFO",confirmationIdx);
+  const extraInfo=extraInfoIdx>=0?source.slice(extraInfoIdx):"";
+  const revision=(String(fileName).match(/REV\\s*0*(\\d+)/i)||n.match(/REV\\s*0*(\\d+)/i)||[])[1];
+  const rev=revision?String(Number(revision)):"21";
 
   return {
     version:`REV ${rev}`,
@@ -674,6 +666,7 @@ function parseProcedureLists(text){
     stamp:[...new Set(stamp)],
     discounts:uniqueDiscounts,
     aliases,
+    extraInfo,
     loadedAt:new Date().toISOString()
   };
 }
@@ -722,7 +715,7 @@ async function loadProcedure(e){
   if(!file) return;
   try{
     const text=await extractPDFText(file);
-    const rules=parseProcedureLists(text);
+    const rules=parseProcedureLists(text,file.name);
     state.procedureFile=file;
     state.procedureRules=rules;
     localStorage.setItem("soaProcedureRules_v2",JSON.stringify(rules));
