@@ -136,7 +136,9 @@ function columnBlockFromLayout(label){
           if(otherX!=null) return it.x < otherX-gap && it.x >= labelX-gap;
           return it.x >= labelX-gap && it.x < labelX+330;
         }else{
-          if(otherX!=null) return it.x >= otherX-gap;
+          // Ship To must start at its own column label. Using the Sold To
+          // label X-coordinate here also admitted text from the left column,
+          // which could make address fragments look like a well name.
           return it.x >= labelX-gap;
         }
       }).sort((a,b)=>a.x-b.x).map(it=>it.text);
@@ -279,7 +281,9 @@ function parseSO(text){
         // header and stay inside the Ship To column.
         const labelItem=row.items.find(it=>normalize(it.text).includes("SHIP TO"));
         const soldItem=row.items.find(it=>normalize(it.text).includes("SOLD TO"));
-        const minX=soldItem ? soldItem.x+20 : (labelItem ? labelItem.x-10 : 0);
+        // Anchor extraction to the Ship To column itself, not merely
+        // to the left edge of the Sold To column.
+        const minX=labelItem ? labelItem.x-10 : (soldItem ? soldItem.x+350 : 0);
         const nextRows=page.rows
           .filter(r=>r.y>row.y && r.y<row.y+120)
           .map(r=>({
