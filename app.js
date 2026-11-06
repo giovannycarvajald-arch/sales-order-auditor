@@ -626,28 +626,28 @@ function parseProcedureLists(text,fileName=""){
 
   // Explicit Procedure relationships / aliases.
   const aliases=[];
-  const exxonToXto=/EXXON MOBIL\\s*\\(\\s*ALL EXXON ORDERS WILL BE XTO\\s*\\)/i.test(source)
+  const exxonToXto=/EXXON MOBIL\s*\(\s*ALL EXXON ORDERS WILL BE XTO\s*\)/i.test(source)
     ||/ALL EXXON ORDERS WILL BE XTO/i.test(source);
   if(exxonToXto){
     aliases.push({from:"EXXON MOBIL",to:"XTO ENERGY",reason:"ALL EXXON ORDERS WILL BE XTO"});
-    if(!taxable.some(x=>/\\bXTO\\b/.test(x))) taxable.push("XTO ENERGY");
-    if(!stamp.some(x=>/\\bXTO\\b/.test(x))) stamp.push("XTO ENERGY");
+    if(!taxable.some(x=>/\bXTO\b/.test(x))) taxable.push("XTO ENERGY");
+    if(!stamp.some(x=>/\bXTO\b/.test(x))) stamp.push("XTO ENERGY");
   }
 
-  const hasXtoTaxable=/\\bXTO(?:\\s+ENERGY)?(?:\\s+INC\\.?|\\s+YELLOWJACKET)?\\b/i.test(taxableText);
-  const hasXtoStamp=/\\bXTO(?:\\s+ENERGY)?(?:\\s+INC\\.?|\\s+YELLOWJACKET)?\\b/i.test(stampText);
-  if(hasXtoTaxable&&!taxable.some(x=>/\\bXTO\\b/i.test(x))) taxable.push("XTO ENERGY");
-  if(hasXtoStamp&&!stamp.some(x=>/\\bXTO\\b/i.test(x))) stamp.push("XTO ENERGY");
+  const hasXtoTaxable=/\bXTO(?:\s+ENERGY)?(?:\s+INC\.?|\s+YELLOWJACKET)?\b/i.test(taxableText);
+  const hasXtoStamp=/\bXTO(?:\s+ENERGY)?(?:\s+INC\.?|\s+YELLOWJACKET)?\b/i.test(stampText);
+  if(hasXtoTaxable&&!taxable.some(x=>/\bXTO\b/i.test(x))) taxable.push("XTO ENERGY");
+  if(hasXtoStamp&&!stamp.some(x=>/\bXTO\b/i.test(x))) stamp.push("XTO ENERGY");
 
   // Discount entries: REV021 contains both "(25%)" and "THRU TUBING 25%" formats.
   const discounts=[];
-  const pctRe=/([^,]+?)\\s*\\((\\d+(?:\\.\\d+)?)%\\)/g;
+  const pctRe=/([^,]+?)\s*\((\d+(?:\.\d+)?)%\)/g;
   let pm;
   while((pm=pctRe.exec(discountText))){
     const name=cleanProcedureName(pm[1]);
     if(name) discounts.push({name,percent:Number(pm[2])});
   }
-  const noParen=[...discountText.matchAll(/(?:^|,)\\s*(THRU TUBING)\\s+(\\d+(?:\\.\\d+)?)%/g)];
+  const noParen=[...discountText.matchAll(/(?:^|,)\s*(THRU TUBING)\s+(\d+(?:\.\d+)?)%/g)];
   noParen.forEach(x=>discounts.push({name:cleanProcedureName(x[1]),percent:Number(x[2])}));
   const seenDiscount=new Set();
   const uniqueDiscounts=discounts.filter(x=>{
@@ -660,7 +660,7 @@ function parseProcedureLists(text,fileName=""){
   // Preserve the operational instructions after the discount/tax section too.
   const extraInfoIdx=source.indexOf("EXTRA INFO",confirmationIdx);
   const extraInfo=extraInfoIdx>=0?source.slice(extraInfoIdx):"";
-  const revisionMatch=String(fileName).match(/REV\\s*0*(\\d+)/i)||n.match(/REV\\s*0*(\\d+)/i);
+  const revisionMatch=String(fileName).match(/REV\s*0*(\d+)/i)||n.match(/REV\s*0*(\d+)/i);
   const rev=revisionMatch?.[1]?String(Number(revisionMatch[1])):"21";
 
   return {
@@ -971,7 +971,7 @@ function runAudit(){
   const hasDesc=(pattern)=>d.items.some(x=>pattern.test(normalize(x.desc)));
 
   if(c==="DIAMONDBACK"){
-    const grsItems=d.items.filter(x=>/\\bGRS\\b|GAS RELEASE SYSTEM/.test(normalize(x.desc)));
+    const grsItems=d.items.filter(x=>/\bGRS\b|GAS RELEASE SYSTEM/.test(normalize(x.desc)));
     if(grsItems.length){
       const bad=grsItems.filter(x=>Math.abs((x.discount||0)-25)>0.01);
       addResult(r,"Diamondback — descuento GRS",bad.length===0,
@@ -1000,7 +1000,7 @@ function runAudit(){
   }
 
   if(hasDesc(/SAFETY SHEAR JOINT/)){
-    const screwCount=/\\b\\d+\\s*(?:SCREWS?|BOLTS?)\\b|\\b(?:SCREWS?|BOLTS?)\\s*[:#-]?\\s*\\d+\\b/i.test(d.notes);
+    const screwCount=/\b\d+\s*(?:SCREWS?|BOLTS?)\b|\b(?:SCREWS?|BOLTS?)\s*[:#-]?\s*\d+\b/i.test(d.notes);
     addResult(r,"Safety Shear Joint — tornillos",true,
       screwCount?"La nota incluye la cantidad de tornillos.":"REV021: indicar en Notes la cantidad de tornillos requerida para el Safety Shear Joint.","warning");
   }
