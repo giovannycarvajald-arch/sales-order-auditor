@@ -233,8 +233,25 @@ function extractCompanyAndWell(label, fallbackText){
     const companyMatch=chunk.match(/^(XTO ENERGY INC|BTA OIL & GAS|COTERRA(?: ENERGY)?|DIAMONDBACK(?: ENERGY)?|APACHE(?: CORP| CORPORATION)?|CHEVRON(?: USA)?|EXXON MOBIL|[A-Z][A-Z0-9 &'./-]{2,80}?)(?=\s|$)/i);
     const company=companyMatch?cleanPartyLine(companyMatch[1]):cleanPartyLine(chunk.split(/\s+(?=\d+\s)/)[0]||chunk);
     const rest=chunk.slice(company.length).trim();
-    const parts=rest.split(/\s+(?=[A-Z][A-Z0-9 &'./-]*\d)/).map(cleanPartyLine).filter(Boolean);
-    const well=parts.find(looksLikeWell)||"";
+    const parts=rest.split(/\s+(?=[A-Z][A-Z0-9 &'./-]*\d)/).map(x=>String(x||"").trim()).filter(Boolean);
+    let well="";
+    for(let i=0;i<parts.length;i++){
+      // The well line may end with a comma before the city/state address.
+      // Treat that comma as a hard boundary so "FORT WORTH" is never appended.
+      let candidate=parts[i].split(",")[0].trim();
+      if(!looksLikeWell(candidate)) continue;
+
+      // PDF text extraction can split a multi-word well across runs:
+      // "DAVIDSON" + "HALE 62E 5H,". Join a preceding alphabetic fragment.
+      if(i>0){
+        const previous=parts[i-1].split(",")[0].trim();
+        const isKnownCompany=/^(?:XTO ENERGY INC|BTA OIL & GAS|COTERRA(?: ENERGY)?|DIAMONDBACK(?: ENERGY)?|APACHE(?: CORP| CORPORATION)?)$/i.test(previous);
+        if(previous && !/\d/.test(previous) && !isKnownCompany && !isAddressLine(previous)){
+          candidate=previous+" "+candidate;
+        }
+      }
+      if(looksLikeWell(candidate)){ well=candidate; break; }
+    }
     return {company,well};
   }
   return {company:"",well:""};
