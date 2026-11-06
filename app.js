@@ -822,12 +822,12 @@ function runAudit(){
     const hasExpectedItem=de.type==="END USER" ? hasEndUserItem : hasAfterHoursItem;
     const expectedPrice=de.price;
     const itemPriceOK=deliveryItems.some(x=>
-      (de.type==="END USER" ? ( /END\\s+USER\\s+DELIVERY/i.test(x.desc) || x.pn==="1004-0002-00" ) :
-        /AFTER\\s+HOURS\\s+DELIVERY/i.test(x.desc)) &&
+      (de.type==="END USER"
+        ? (normalize(x.desc).includes("END USER DELIVERY") || x.pn==="1004-0002-00")
+        : normalize(x.desc).includes("AFTER HOURS DELIVERY")) &&
       Math.abs(Number(x.price)-expectedPrice)<=0.01
     );
-    const textPriceOK=deliveryPriceMatch===expectedPrice;
-    delOK=hasExpectedItem && (itemPriceOK || textPriceOK);
+    delOK=hasExpectedItem && itemPriceOK;
     deliveryDetail=de.type+" — "+money(de.price)+". "+de.reason+
       (deliveryItems.length
         ?" Se encontró en la SO: "+deliveryItems.map(x=>x.pn+" "+x.desc+" ("+money(x.price)+" x "+x.qty+")").join(" | ")+"."
