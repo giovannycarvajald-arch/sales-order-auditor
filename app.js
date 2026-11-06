@@ -128,8 +128,10 @@ function columnBlockFromLayout(label){
   const left=Math.min(labelX, otherX==null ? labelX+500 : otherX);
   const right=Math.max(labelX, otherX==null ? labelX+500 : otherX);
   const gap=20;
+  // PDF.js uses a bottom-left origin: content BELOW a heading has a
+  // smaller y-coordinate. Restrict the scan to the rows beneath this label.
   const rows=page.rows
-    .filter(r=>r.y>rowY && r.y<rowY+150)
+    .filter(r=>r.y<rowY && r.y>rowY-150)
     .map(r=>{
       const texts=r.items.filter(it=>{
         if(isSold){
@@ -303,8 +305,10 @@ function parseSO(text){
   }
   const soldCompanyFromText=companyImmediatelyAfter("Sold To");
   const shipCompanyFromText=companyImmediatelyAfter("Ship To");
-  if(soldCompanyFromText) soldBlock.company=soldCompanyFromText;
-  if(shipCompanyFromText) shipBlock.company=shipCompanyFromText;
+  // Trust the independently bounded visual columns first. The flattened
+  // text layer can interleave the left and right columns on the same row.
+  if(!soldBlock.company && soldCompanyFromText) soldBlock.company=soldCompanyFromText;
+  if(!shipBlock.company && shipCompanyFromText) shipBlock.company=shipCompanyFromText;
 
   // Odessa SO structure: the company normally appears in both Sold To and
   // Ship To. The well can appear on the following line in the party block.
@@ -333,15 +337,15 @@ function parseSO(text){
         const rt=normalize(row.text);
         if(rt!=="SHIP TO:" && rt!=="SHIP TO") continue;
 
-        // PDF coordinates increase downward. Look only BELOW the Ship To
-        // header and stay inside the Ship To column.
+        // PDF.js coordinates increase upward. Look BELOW the Ship To
+        // header by selecting rows with smaller y-values.
         const labelItem=row.items.find(it=>normalize(it.text).includes("SHIP TO"));
         const soldItem=row.items.find(it=>normalize(it.text).includes("SOLD TO"));
         // Anchor extraction to the Ship To column itself, not merely
         // to the left edge of the Sold To column.
         const minX=labelItem ? labelItem.x-10 : (soldItem ? soldItem.x+350 : 0);
         const nextRows=page.rows
-          .filter(r=>r.y>row.y && r.y<row.y+120)
+          .filter(r=>r.y<row.y && r.y>row.y-120)
           .map(r=>({
             y:r.y,
             text:r.items
