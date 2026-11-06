@@ -356,8 +356,7 @@ function parseSO(text){
   if(recognizedStampPhrase && !extractedNotes.toUpperCase().includes(recognizedStampPhrase)){
     extractedNotes=(extractedNotes+" "+recognizedStampPhrase).trim();
   }
-  setValue("notes",extractedNotes);"),"i").test(t));
-  if(recognizedStampPhrase && !new RegExp(recognizedStampPhrase.replace(/[.*+?^${}()|[\]\\]/g,"\\  setValue("notes",extractedNotes);"),"i").test(extractedNotes)){
+  setValue("notes",extractedNotes);"),"i").test(extractedNotes)){
     extractedNotes=(extractedNotes+" "+recognizedStampPhrase).trim();
   }
   setValue("notes",extractedNotes);
