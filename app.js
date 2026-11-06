@@ -779,8 +779,13 @@ function runAudit(){
   const deliveryItems=d.items.filter(x=>/DELIVERY\s+CHARGE|AFTER\s+HOURS\s+DELIVERY|END\s+USER\s+DELIVERY/i.test(x.desc)||x.pn==="1004-0002-00");
   const hasEndUserItem=deliveryItems.some(x=>/END\s+USER\s+DELIVERY/i.test(x.desc)||x.pn==="1004-0002-00");
   const hasAfterHoursItem=deliveryItems.some(x=>/AFTER\s+HOURS\s+DELIVERY/i.test(x.desc));
-  const pickupChargeItems=d.items.filter(x=>/PICK\s*UP\s+CHARGE|PICKUP\s+CHARGE/i.test(x.desc));
-  const fieldServicePickup=normalize(d.shippingMethod)==="FIELD SERVICE" && pickupChargeItems.length>0;
+  // A PICK UP CHARGE line means the customer collects the repaired tool at OSI.
+  // Use the charge itself as the reliable signal because Shipping Method can be
+  // missed by PDF text extraction even when it is visible in the document.
+  const pickupChargeItems=d.items.filter(x=>
+    /PICK\\s*UP\\s+CHARGE|PICKUP\\s+CHARGE/i.test(x.desc) || x.pn==="1004-0003-00"
+  );
+  const fieldServicePickup=pickupChargeItems.length>0;
   const deliveryItemAmount=deliveryItems.reduce((sum,x)=>sum+(Number(x.amount)||Number(x.price||0)*Number(x.qty||1)),0);
   const deliveryPriceMatch=
     deliveryText.includes("AFTER HOURS") ? RULES.afterHoursDelivery :
@@ -800,7 +805,7 @@ function runAudit(){
   }
   let deliveryDetail;
   if(fieldServicePickup){
-    deliveryDetail="Shipping Method: FIELD SERVICE. Se encontró "+pickupChargeItems.map(x=>x.pn+" "+x.desc+" ("+money(x.price)+" x "+x.qty+")").join(" | ")+". No se exige END USER DELIVERY para este caso. Verificar si el cliente recogerá la herramienta en OSI después de la reparación.";
+    deliveryDetail=(normalize(d.shippingMethod)==="FIELD SERVICE"?"Shipping Method: FIELD SERVICE. ":"")+"Se encontró PICK UP CHARGE: "+pickupChargeItems.map(x=>x.pn+" "+x.desc+" ("+money(x.price)+" x "+x.qty+")").join(" | ")+". No se exige END USER DELIVERY ni AFTER HOURS DELIVERY. Verificar que el cliente recoja la herramienta en OSI después de la reparación.";
   }else if(de.type==="UNKNOWN") deliveryDetail="No se pudo validar fecha/hora.";
   else if(de.type==="NONE") deliveryDetail=de.type+" — sin cargo. "+de.reason;
   else deliveryDetail=de.type+" — "+money(de.price)+". "+de.reason+(deliveryItems.length?" Se encontró en la SO: "+deliveryItems.map(x=>x.pn+" "+x.desc+" ("+money(x.price)+" x "+x.qty+")").join(" | ")+".":" No se encontró un ítem de Delivery Charge correspondiente en la SO.");
