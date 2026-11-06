@@ -297,7 +297,7 @@ function parseSO(text){
     const re=new RegExp(label+"\\s*:?\\s*(.{2,180}?)(?=\\s+"+other+"\\b)","i");
     const m=t.match(re);
     if(!m) return "";
-    const block=m[1].replace(/\\s+/g," ").trim();
+    const block=m[1].replace(/\s+/g," ").trim();
     const known=block.match(/^(XTO ENERGY INC|PIONEER(?: NATURAL RESOURCES)?|EXXON MOBIL|BTA OIL & GAS|COTERRA(?: ENERGY)?|DIAMONDBACK(?: ENERGY)?|APACHE(?: CORP| CORPORATION)?|CHEVRON(?: USA)?)/i);
     return known ? known[1].trim() : "";
   }
