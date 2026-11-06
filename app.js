@@ -129,7 +129,7 @@ function columnBlockFromLayout(label){
   const right=Math.max(labelX, otherX==null ? labelX+500 : otherX);
   const gap=20;
   const rows=page.rows
-    .filter(r=>r.y>rowY && r.y<rowY+150)
+    .filter(r=>r.y<rowY && r.y>rowY-150)
     .map(r=>{
       const texts=r.items.filter(it=>{
         if(isSold){
@@ -289,23 +289,10 @@ function parseSO(text){
   const soldBlock=extractCompanyAndWell("Sold To",t);
   const shipBlock=extractCompanyAndWell("Ship To",t);
 
-  // Some PDF layouts return the left-column company for both blocks when
-  // the two columns share a text row. Re-read each labelled block from the
-  // text layer and prefer an explicit, recognized company at that label.
-  function companyImmediatelyAfter(label){
-    const other=label==="Sold To" ? "Ship To" : "(?:Delivery Ticket|Shipping Method|Customer P\\/?O|Inventory Location)";
-    const re=new RegExp(label+"\\s*:?\\s*(.{2,180}?)(?=\\s+"+other+"\\b)","i");
-    const m=t.match(re);
-    if(!m) return "";
-    const block=m[1].replace(/\\s+/g," ").trim();
-    const known=block.match(/^(XTO ENERGY INC|PIONEER(?: NATURAL RESOURCES)?|EXXON MOBIL|BTA OIL & GAS|COTERRA(?: ENERGY)?|DIAMONDBACK(?: ENERGY)?|APACHE(?: CORP| CORPORATION)?|CHEVRON(?: USA)?)/i);
-    return known ? known[1].trim() : "";
-  }
-  const soldCompanyFromText=companyImmediatelyAfter("Sold To");
-  const shipCompanyFromText=companyImmediatelyAfter("Ship To");
-  if(soldCompanyFromText) soldBlock.company=soldCompanyFromText;
-  if(shipCompanyFromText) shipBlock.company=shipCompanyFromText;
-
+  // Company names are extracted from each column's own PDF coordinates.
+  // Do not override Ship To with a regex over flattened text: PDF.js may emit
+  // both companies on the same visual line, causing the Sold To company to
+  // be selected for both fields.
   // Odessa SO structure: the company normally appears in both Sold To and
   // Ship To. The well can appear on the following line in the party block.
   // Customer must come from the company name, never from the address/well.
@@ -341,7 +328,7 @@ function parseSO(text){
         // to the left edge of the Sold To column.
         const minX=labelItem ? labelItem.x-10 : (soldItem ? soldItem.x+350 : 0);
         const nextRows=page.rows
-          .filter(r=>r.y>row.y && r.y<row.y+120)
+          .filter(r=>r.y<row.y && r.y>row.y-120)
           .map(r=>({
             y:r.y,
             text:r.items
