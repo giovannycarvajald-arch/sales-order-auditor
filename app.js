@@ -197,8 +197,23 @@ function extractCompanyAndWell(label, fallbackText){
     }
     const company=useful[0]||"";
     let well="";
-    for(const candidate of useful.slice(1)){
-      if(looksLikeWell(candidate)){ well=candidate; break; }
+    for(let i=1;i<useful.length;i++){
+      const candidate=useful[i];
+      if(!looksLikeWell(candidate)) continue;
+
+      // In some Odessa PDFs the well is split across two visual lines:
+      // "DAVIDSON" / "HALE 62E 5H,". Rejoin the preceding name fragment.
+      // A trailing comma marks the end of the Ship To well line; never append
+      // city/address text such as "FORT WORTH" from later lines.
+      let wellText=candidate.split(",")[0].trim();
+      if(i>1){
+        const previous=useful[i-1];
+        if(previous && !/\\d/.test(previous) && !isAddressLine(previous) &&
+           !/^(?:XTO ENERGY INC|BTA OIL & GAS|COTERRA(?: ENERGY)?|DIAMONDBACK(?: ENERGY)?|APACHE(?: CORP| CORPORATION)?)$/i.test(previous)){
+          wellText=previous+" "+wellText;
+        }
+      }
+      if(looksLikeWell(wellText)){ well=wellText; break; }
     }
     return {company,well};
   }
