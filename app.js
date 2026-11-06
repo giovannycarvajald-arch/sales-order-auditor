@@ -1053,6 +1053,54 @@ function runAudit(){
   }
 
 
+
+  if(hasDesc(/PMM/)){
+    const sixScrews=/\\b6\\s+SCREWS?\\b/i.test(d.notes);
+    const pressure=/\\b4500\\s*PSI\\b/i.test(d.notes);
+    addResult(r,"PMM — configuración",true,
+      sixScrews&&pressure?"Notes indica 6 screws y 4,500 psi.":
+      "REV021: verificar que PMM tenga 6 screws, set pressure de 4,500 psi y etiqueta con presión y nombre del pozo.","warning");
+  }
+
+  if(/DONOVAN SANCHEZ/.test(normalize(d.salesPerson)) &&
+     /RILEY PERMIAN|DEVON/.test(normalize(d.customer)) &&
+     hasDesc(/COMPACT 350 SAND LIFT/)){
+    const bad=d.items.filter(x=>/COMPACT 350 SAND LIFT/.test(normalize(x.desc))&&Math.abs(x.price-5500)>0.01);
+    addResult(r,"Donovan — Compact 350 Sand Lift",bad.length===0,
+      bad.length?bad.map(x=>`${x.pn}: ${money(x.price)} vs requerido $5,500.`).join(" | "):
+      "REV021: para Donovan con Riley Permian o Devon, Compact 350 Sand Lift debe tener precio de $5,500.");
+  }
+
+  if(/OXY/.test(normalize(d.customer))){
+    addResult(r,"OXY — entidad del pozo",true,
+      "REV021: verificar en DrillingEdge si el pozo pertenece a OXY NM u OXY USA; son entidades distintas y tienen tratamiento fiscal diferente.","warning");
+  }
+
+  if(/PERMIAN RESOURCES/.test(normalize(d.customer)) &&
+     hasDesc(/DESANDER|SAND LIFT/)){
+    addResult(r,"Permian Resources — precios especiales",true,
+      "REV021: verificar si aplica Desander $3,000 (Oxy Rock), Desander revendida $3,333, o Sand Lift con 10% de descuento y PN 710-0170-00 Ultramesh.","warning");
+  }
+
+  const cardFee=d.items.find(x=>x.pn==="1002-0002-00");
+  if(/CREDIT CARD|CREDIT CARD PAYMENT|PAYMENT AT THE OFFICE/.test(notesNormalized)||cardFee){
+    const feeActual=cardFee?cardFee.price*cardFee.qty:0;
+    const baseValue=Math.max(0,d.subtotal-feeActual);
+    const feeExpected=Math.round(baseValue*0.0375*100)/100;
+    const feeOK=!!cardFee&&Math.abs(feeActual-feeExpected)<=0.02;
+    addResult(r,"Credit card processing fee",feeOK,
+      feeOK?`REV021: fee del 3.75% correctamente aplicado (${money(feeActual)}).`:
+      `REV021: se requiere PN 1002-0002-00 por el 3.75% del valor de la venta. Esperado: ${money(feeExpected)}; encontrado: ${cardFee?money(feeActual):"no encontrado"}. Verificar también que TAX se aplique al fee cuando el cliente sea taxable.`);
+  }
+
+  if(procedureReady && !procedureHas(d.customer,state.procedureRules.taxable) &&
+     !RULES.nonTaxableCustomers.some(x=>procedureCustomerMatch(d.customer,x)) &&
+     !procedureHas(d.customer,state.procedureRules.stamp) &&
+     !findProcedureDiscount(d.customer)){
+    addResult(r,"Tax status — confirmar empresa",true,
+      "REV021: la empresa no aparece en TAXABLE, STAMP ni DISCOUNT. Si es nueva o no común, confirmar con el vendedor si corresponde incluir TAX.","warning");
+  }
+
   if(!procedureReady) suggestions.push("Carga el Sales Order Procedure REV021 o una revisión posterior para activar TAXABLE/STAMP/DISCOUNT dinámicos.");
 
   const errors=r.filter(x=>!x.ok);
