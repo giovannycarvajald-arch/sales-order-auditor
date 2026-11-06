@@ -153,6 +153,41 @@ function columnBlockFromLayout(label){
   return rows;
 }
 
+function extractShipWellDirect(){
+  // Robust fallback for Odessa PDFs where the well is on the line directly
+  // beneath the Ship To company, but the generic party parser misses it.
+  for(const page of state.pdfLayout||[]){
+    const found=findPartyColumn("Ship To");
+    if(!found || found.page!==page) continue;
+    const {rowY,shipX}=found;
+    const rows=page.rows
+      .filter(r=>r.y<rowY && r.y>rowY-90)
+      .map(r=>({
+        y:r.y,
+        text:r.items
+          .filter(it=>it.x>=shipX-8 && it.x<610)
+          .sort((a,b)=>a.x-b.x)
+          .map(it=>it.text).join(" ").replace(/\\s+/g," ").trim()
+      }))
+      .filter(r=>r.text);
+    let companySeen=false;
+    for(const row of rows){
+      let candidate=cleanPartyLine(row.text);
+      if(!candidate || isAddressLine(candidate)) continue;
+      if(!companySeen){
+        companySeen=true;
+        // Sometimes PDF.js combines the company and well into one text row.
+        const combined=candidate.match(/^(?:APACHE|XTO ENERGY INC|PIONEER(?: NATURAL RESOURCES)?|OCCIDENTAL PERMIAN)\\s+(.+\\d[^,]*)[,]?$/i);
+        if(combined && looksLikeWell(combined[1])) return combined[1].trim();
+        continue;
+      }
+      candidate=candidate.split(",")[0].trim();
+      if(looksLikeWell(candidate)) return candidate;
+    }
+  }
+  return "";
+}
+
 function cleanPartyLine(x){
   return String(x||"").replace(/\s+/g," ").replace(/,$/,"").trim();
 }
@@ -309,6 +344,7 @@ function parseSO(text){
   let shipTo=shipBlock.company || customer || "";
   let soldToWell=soldBlock.well || "";
   let shipToWell=shipBlock.well || "";
+  if(!shipToWell) shipToWell=extractShipWellDirect();
 
   // Last-resort company detection from the flattened text. This is only a
   // fallback; coordinate-based extraction above is the primary parser.
