@@ -1055,8 +1055,8 @@ function runAudit(){
 
 
   if(hasDesc(/PMM/)){
-    const sixScrews=/\\b6\\s+SCREWS?\\b/i.test(d.notes);
-    const pressure=/\\b4500\\s*PSI\\b/i.test(d.notes);
+    const sixScrews=/\b6\s+SCREWS?\b/i.test(d.notes);
+    const pressure=/\b4500\s*PSI\b/i.test(d.notes);
     addResult(r,"PMM — configuración",true,
       sixScrews&&pressure?"Notes indica 6 screws y 4,500 psi.":
       "REV021: verificar que PMM tenga 6 screws, set pressure de 4,500 psi y etiqueta con presión y nombre del pozo.","warning");
