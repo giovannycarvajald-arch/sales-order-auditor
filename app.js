@@ -128,10 +128,8 @@ function columnBlockFromLayout(label){
   const left=Math.min(labelX, otherX==null ? labelX+500 : otherX);
   const right=Math.max(labelX, otherX==null ? labelX+500 : otherX);
   const gap=20;
-  // PDF.js uses a bottom-left origin: content BELOW a heading has a
-  // smaller y-coordinate. Restrict the scan to the rows beneath this label.
   const rows=page.rows
-    .filter(r=>r.y<rowY && r.y>rowY-150)
+    .filter(r=>r.y>rowY && r.y<rowY+150)
     .map(r=>{
       const texts=r.items.filter(it=>{
         if(isSold){
@@ -148,35 +146,6 @@ function columnBlockFromLayout(label){
     })
     .filter(r=>r.text);
   return rows;
-}
-
-function companyFromColumnLayout(label){
-  const found=findPartyColumn(label);
-  if(!found) return "";
-  const {page,rowY,labelX,otherX}=found;
-  const isSold=normalize(label)==="SOLD TO";
-  const candidates=page.rows
-    .filter(r=>Math.abs(r.y-rowY)>2 && Math.abs(r.y-rowY)<65)
-    .map(r=>{
-      const items=r.items.filter(it=>{
-        if(isSold){
-          if(otherX!=null) return it.x>=labelX-8 && it.x<otherX-8;
-          return it.x>=labelX-8 && it.x<labelX+260;
-        }
-        return it.x>=labelX-8 && it.x<labelX+280;
-      }).sort((a,b)=>a.x-b.x);
-      return {y:r.y,text:items.map(it=>it.text).join(" ").replace(/\\s+/g," ").trim()};
-    })
-    .filter(r=>r.text)
-    .sort((a,b)=>Math.abs(a.y-rowY)-Math.abs(b.y-rowY));
-  // The company is the first non-address line in its own visual column.
-  for(const row of candidates){
-    const value=cleanPartyLine(row.text);
-    if(!value || isAddressLine(value)) continue;
-    if(/^(?:DELIVERY TICKET|SHIPPING METHOD|CUSTOMER P\\/?O|INVENTORY LOCATION)\\b/i.test(value)) continue;
-    return value;
-  }
-  return "";
 }
 
 function cleanPartyLine(x){
@@ -328,20 +297,14 @@ function parseSO(text){
     const re=new RegExp(label+"\\s*:?\\s*(.{2,180}?)(?=\\s+"+other+"\\b)","i");
     const m=t.match(re);
     if(!m) return "";
-    const block=m[1].replace(/\s+/g," ").trim();
+    const block=m[1].replace(/\\s+/g," ").trim();
     const known=block.match(/^(XTO ENERGY INC|PIONEER(?: NATURAL RESOURCES)?|EXXON MOBIL|BTA OIL & GAS|COTERRA(?: ENERGY)?|DIAMONDBACK(?: ENERGY)?|APACHE(?: CORP| CORPORATION)?|CHEVRON(?: USA)?)/i);
     return known ? known[1].trim() : "";
   }
-  const soldCompanyFromLayout=companyFromColumnLayout("Sold To");
-  const shipCompanyFromLayout=companyFromColumnLayout("Ship To");
   const soldCompanyFromText=companyImmediatelyAfter("Sold To");
   const shipCompanyFromText=companyImmediatelyAfter("Ship To");
-  // Company identity must come from the matching visual column. The flattened
-  // text layer places both company names on one row and is unsafe for Ship To.
-  if(soldCompanyFromLayout) soldBlock.company=soldCompanyFromLayout;
-  else if(!soldBlock.company && soldCompanyFromText) soldBlock.company=soldCompanyFromText;
-  if(shipCompanyFromLayout) shipBlock.company=shipCompanyFromLayout;
-  else if(!shipBlock.company && shipCompanyFromText) shipBlock.company=shipCompanyFromText;
+  if(soldCompanyFromText) soldBlock.company=soldCompanyFromText;
+  if(shipCompanyFromText) shipBlock.company=shipCompanyFromText;
 
   // Odessa SO structure: the company normally appears in both Sold To and
   // Ship To. The well can appear on the following line in the party block.
@@ -370,15 +333,15 @@ function parseSO(text){
         const rt=normalize(row.text);
         if(rt!=="SHIP TO:" && rt!=="SHIP TO") continue;
 
-        // PDF.js coordinates increase upward. Look BELOW the Ship To
-        // header by selecting rows with smaller y-values.
+        // PDF coordinates increase downward. Look only BELOW the Ship To
+        // header and stay inside the Ship To column.
         const labelItem=row.items.find(it=>normalize(it.text).includes("SHIP TO"));
         const soldItem=row.items.find(it=>normalize(it.text).includes("SOLD TO"));
         // Anchor extraction to the Ship To column itself, not merely
         // to the left edge of the Sold To column.
         const minX=labelItem ? labelItem.x-10 : (soldItem ? soldItem.x+350 : 0);
         const nextRows=page.rows
-          .filter(r=>r.y<row.y && r.y>row.y-120)
+          .filter(r=>r.y>row.y && r.y<row.y+120)
           .map(r=>({
             y:r.y,
             text:r.items
