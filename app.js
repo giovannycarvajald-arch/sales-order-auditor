@@ -792,31 +792,49 @@ function runAudit(){
     deliveryText.includes("END USER") ? RULES.endUserDelivery :
     hasAfterHoursItem ? RULES.afterHoursDelivery :
     hasEndUserItem ? RULES.endUserDelivery : null;
-  let delOK;
-  // Pickup + any recognized delivery charge means the tool was collected,
-  // serviced at OSI, and shipped back to the customer: delivery requirement met.
-  if(fieldServicePickup && deliveryItems.length>0) delOK=true;
-  // Pickup without a delivery charge is allowed, but requires confirmation
-  // that the customer will collect the tool at OSI.
-  else if(fieldServicePickup) delOK=true;
-  else if(de.type==="UNKNOWN") delOK=true;
-  else if(de.type==="NONE") delOK=!deliveryPriceMatch && deliveryItems.length===0;
-  else {
+  let delOK=true;
+  let deliveryDetail="";
+  let deliveryKind="";
+
+  // PICK UP CHARGE never bypasses delivery validation. It only changes the
+  // outcome when no outbound Delivery Charge is present: then confirm pickup.
+  if(fieldServicePickup && deliveryItems.length===0){
+    delOK=true;
+    deliveryKind="warning";
+    deliveryDetail=(normalize(d.shippingMethod)==="FIELD SERVICE"?"Shipping Method: FIELD SERVICE. ":"")+
+      "Se encontró PICK UP CHARGE: "+pickupChargeItems.map(x=>x.pn+" "+x.desc+" ("+money(x.price)+" x "+x.qty+")").join(" | ")+
+      ". No se encontró ningún Delivery Charge. Verificar si el cliente recogerá la herramienta en OSI después de la reparación.";
+  }else if(de.type==="UNKNOWN"){
+    // Without date/time the schedule and applicable tariff cannot be verified.
+    // If a pickup and outbound charge coexist, flag the missing validation.
+    delOK=!fieldServicePickup;
+    deliveryKind=fieldServicePickup && deliveryItems.length>0?"warning":"";
+    deliveryDetail="No se pudo validar fecha/hora; no es posible confirmar el horario ni la tarifa del Delivery Charge."+
+      (fieldServicePickup?" Se encontraron PICK UP CHARGE y Delivery Charge, pero se debe confirmar el cargo según el horario.":"");
+  }else if(de.type==="NONE"){
+    delOK=deliveryItems.length===0;
+    deliveryDetail=deliveryItems.length
+      ?"No se esperaba Delivery Charge para este caso, pero se encontró: "+deliveryItems.map(x=>x.pn+" "+x.desc+" ("+money(x.price)+" x "+x.qty+")").join(" | ")+"."
+      :"Sin cargo requerido. "+de.reason;
+  }else{
+    // Apply the same schedule/type/price checks whether or not PICK UP CHARGE
+    // is present. A pickup charge does not make an incorrect delivery fee valid.
     const hasExpectedItem=de.type==="END USER" ? hasEndUserItem : hasAfterHoursItem;
     const expectedPrice=de.price;
-    const itemPriceOK=deliveryItems.some(x=>Math.abs(Number(x.price)-expectedPrice)<=0.01 || Math.abs(Number(x.amount)-expectedPrice)<=0.01);
+    const itemPriceOK=deliveryItems.some(x=>
+      (de.type==="END USER" ? ( /END\\s+USER\\s+DELIVERY/i.test(x.desc) || x.pn==="1004-0002-00" ) :
+        /AFTER\\s+HOURS\\s+DELIVERY/i.test(x.desc)) &&
+      Math.abs(Number(x.price)-expectedPrice)<=0.01
+    );
     const textPriceOK=deliveryPriceMatch===expectedPrice;
     delOK=hasExpectedItem && (itemPriceOK || textPriceOK);
+    deliveryDetail=de.type+" — "+money(de.price)+". "+de.reason+
+      (deliveryItems.length
+        ?" Se encontró en la SO: "+deliveryItems.map(x=>x.pn+" "+x.desc+" ("+money(x.price)+" x "+x.qty+")").join(" | ")+"."
+        :" No se encontró un ítem de Delivery Charge correspondiente en la SO.")+
+      (fieldServicePickup?" También se encontró PICK UP CHARGE; se validó igualmente el Delivery Charge contra el horario y la tarifa correspondiente.":"");
   }
-  let deliveryDetail;
-  if(fieldServicePickup && deliveryItems.length>0){
-    deliveryDetail="Se encontraron PICK UP CHARGE y cargo(s) de entrega: "+pickupChargeItems.concat(deliveryItems).map(x=>x.pn+" "+x.desc+" ("+money(x.price)+" x "+x.qty+")").join(" | ")+". La herramienta fue recogida para servicio y también se incluyó el cargo de reenvío al cliente. Requisito de Delivery Charge cumplido.";
-  }else if(fieldServicePickup){
-    deliveryDetail=(normalize(d.shippingMethod)==="FIELD SERVICE"?"Shipping Method: FIELD SERVICE. ":"")+"Se encontró PICK UP CHARGE: "+pickupChargeItems.map(x=>x.pn+" "+x.desc+" ("+money(x.price)+" x "+x.qty+")").join(" | ")+". No se encontró ningún cargo de entrega adicional. Verificar que el cliente recoja la herramienta en OSI después de la reparación.";
-  }else if(de.type==="UNKNOWN") deliveryDetail="No se pudo validar fecha/hora.";
-  else if(de.type==="NONE") deliveryDetail=de.type+" — sin cargo. "+de.reason;
-  else deliveryDetail=de.type+" — "+money(de.price)+". "+de.reason+(deliveryItems.length?" Se encontró en la SO: "+deliveryItems.map(x=>x.pn+" "+x.desc+" ("+money(x.price)+" x "+x.qty+")").join(" | ")+".":" No se encontró un ítem de Delivery Charge correspondiente en la SO.");
-  addResult(r,"Delivery Charge",delOK,deliveryDetail,fieldServicePickup && deliveryItems.length===0?"warning":"");
+  addResult(r,"Delivery Charge",delOK,deliveryDetail,deliveryKind);
 
   const hasTrigger=d.items.some(x=>x.pn==="1014-0142-00");
   const hasInspection=d.items.some(x=>x.pn==="1004-0009-00");
