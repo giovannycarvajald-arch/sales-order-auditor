@@ -4,7 +4,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
 
 const $ = id => document.getElementById(id);
-const state = { pdfFile:null, priceList:new Map(), items:[], procedureFile:null, procedureRules:null, pdfLayout:[], shippingMethod:"" };
+const state = { pdfFile:null, priceList:new Map(), items:[], procedureFile:null, procedureRules:null, pdfLayout:[], shippingMethod:"", salesPerson:"" };
 
 const PN_REGEX = /^\d{2,4}-\d{4}-\d{2}(?:-\d{2})?$/;
 
@@ -393,6 +393,9 @@ function parseSO(text){
     }
   }
 
+  const salespersonLine=lines.find(x=>/^Sales\s*person\s*:/i.test(x))||"";
+  state.salesPerson=salespersonLine.replace(/^Sales\s*person\s*:\s*/i,"").trim();
+
   const contactLine=lines.find(x=>/^Contact\s*:/i.test(x))||"";
   const contact=contactLine.replace(/^Contact\s*:\s*/i,"").replace(/\s*-\s*(?:\+\s*1\s*)?\d[\d\s().-]+$/,"").trim();
 
@@ -768,7 +771,7 @@ function getData(){
     soldToWell:$("soldToWell").value.trim(), shipToWell:$("shipToWell").value.trim(),
     contact:$("contact").value.trim(), phone:$("phone").value.trim(),
     date:$("deliveryDate").value, time:$("deliveryTime").value,
-    deliveryText:$("deliveryText").value.trim(), shippingMethod:state.shippingMethod||"", notes:$("notes").value.trim(),
+    deliveryText:$("deliveryText").value.trim(), shippingMethod:state.shippingMethod||"", salesPerson:state.salesPerson||"", notes:$("notes").value.trim(),
     subtotal:Number($("subtotal").value||0), tax:Number($("tax").value||0), total:Number($("total").value||0), items
   };
 }
@@ -954,6 +957,92 @@ function runAudit(){
 
   if(c==="DIAMONDBACK" && !hasPhrase(d.notes,["AFE & GL","PLEASE PROVIDE AFE & GL ACCOUNT"]))
     suggestions.push("Diamondback: confirmar que estén presentes AFE & GL Account.");
+
+  // REV021 — Additional customer/product-specific instructions.
+  const hasDesc=(pattern)=>d.items.some(x=>pattern.test(normalize(x.desc)));
+
+  if(c==="DIAMONDBACK"){
+    const grsItems=d.items.filter(x=>/\\bGRS\\b|GAS RELEASE SYSTEM/.test(normalize(x.desc)));
+    if(grsItems.length){
+      const bad=grsItems.filter(x=>Math.abs((x.discount||0)-25)>0.01);
+      addResult(r,"Diamondback — descuento GRS",bad.length===0,
+        bad.length?bad.map(x=>`${x.pn}: descuento ${x.discount||0}% vs requerido 25%.`).join(" | "):
+        "REV021: los equipos GRS de Diamondback deben llevar 25% de descuento.");
+    }
+  }
+
+  if(/VALENCE OPERATING/.test(normalize(d.customer))){
+    const signOK=hasPhrase(d.notes,["MUST GET COMPANY MAN SIGN"]);
+    const taxExempt=Math.abs(d.tax)<0.01;
+    addResult(r,"Valence — firma y tax exempt",signOK&&taxExempt,
+      `REV021 requiere la nota “MUST GET COMPANY MAN SIGN” y tratamiento Tax Exempt. Nota: ${signOK?"presente":"FALTA"}; Tax: ${money(d.tax)}.`);
+  }
+
+  if(hasDesc(/SLOTTED GAS SHIELD/)){
+    const dipTube=hasDesc(/DIP TUBE/);
+    addResult(r,"Slotted Gas Shield — Dip Tube",dipTube,
+      dipTube?"Dip Tube incluido.":"REV021: todo Slotted Gas Shield debe incluir un Dip Tube.");
+  }
+
+  if(hasDesc(/G[- ]?FORCE PACKERLESS/)){
+    const companion=hasDesc(/OAL SPACER SUB|PUP JOINT/);
+    addResult(r,"G-Force Packerless — accesorio",companion,
+      companion?"OAL Spacer Sub o Pup Joint incluido.":"REV021: agregar un OAL Spacer Sub o un Pup Joint al G-Force Packerless.");
+  }
+
+  if(hasDesc(/SAFETY SHEAR JOINT/)){
+    const screwCount=/\\b\\d+\\s*(?:SCREWS?|BOLTS?)\\b|\\b(?:SCREWS?|BOLTS?)\\s*[:#-]?\\s*\\d+\\b/i.test(d.notes);
+    addResult(r,"Safety Shear Joint — tornillos",true,
+      screwCount?"La nota incluye la cantidad de tornillos.":"REV021: indicar en Notes la cantidad de tornillos requerida para el Safety Shear Joint.","warning");
+  }
+
+  if(/CONSIGNMENT/.test(notesNormalized)){
+    const zeroValue=Math.abs(d.total)<0.01;
+    addResult(r,"Consignment — valor de la SO",zeroValue,
+      zeroValue?"Consignment order con valor total $0.00.":"REV021: las órdenes de consignment deben tener el valor de la Sales Order en $0.00.");
+  }
+
+  if((/OXY|PERMIAN RESOURCES|COTERRA|APACHE/.test(normalize(d.customer))) &&
+     hasDesc(/SAND LIFT|DESANDER/)){
+    addResult(r,"Consignment — verificación de herramientas",true,
+      "REV021: verificar el Excel de consignment en sitio y cruzar la información con Field Services; si hay herramientas en consignment, completar la hoja de reinstalación correspondiente.","warning");
+  }
+
+  if(/FIREBIRD/.test(normalize(d.customer))){
+    addResult(r,"Firebird — cambio de entidad",true,
+      "REV021 indica que desde el 23/09/2026 todas las órdenes Firebird se cambian a Continental. Confirmar que la orden esté creada bajo Continental.","warning");
+  }
+
+  if(/CRESCENT ENERGY/.test(normalize(d.customer))){
+    const crescentErrors=[];
+    d.items.filter(x=>/DESANDER/.test(normalize(x.desc))).forEach(x=>{
+      const expected=/BORONIZED/.test(normalize(x.desc))?4900:3000;
+      if(Math.abs(x.price-expected)>0.01) crescentErrors.push(`${x.pn}: ${money(x.price)} vs requerido ${money(expected)}.`);
+    });
+    if(d.items.some(x=>/DESANDER/.test(normalize(x.desc)))){
+      addResult(r,"Crescent Energy — precio desander",crescentErrors.length===0,
+        crescentErrors.length?crescentErrors.join(" | "):"REV021: Desander $3,000 / Boronized Desander $4,900.");
+    }
+  }
+
+  if(/OXY|OCCIDENTAL PERMIAN/.test(normalize(d.customer))){
+    const compact=d.items.filter(x=>/SAND LIFT COMPACT/.test(normalize(x.desc)));
+    if(compact.length){
+      const bad=compact.filter(x=>Math.abs(x.price-5500)>0.01);
+      addResult(r,"OXY / Occidental Permian — Sand Lift Compact",bad.length===0,
+        bad.length?bad.map(x=>`${x.pn}: ${money(x.price)} vs requerido $5,500.`).join(" | "):
+        "REV021: Sand Lift Compact debe tener precio de $5,500.");
+    }
+  }
+
+  if(c==="XTO" && /NEIL JOHNSON/.test(normalize(d.salesPerson)) &&
+     d.items.some(x=>/GRSB|GAS RELEASE SYSTEM BYPASS/.test(normalize(x.desc)))){
+    const afterHoursQty=d.items.filter(x=>/AFTER HOURS DELIVERY/.test(normalize(x.desc))).reduce((sum,x)=>sum+x.qty,0);
+    addResult(r,"XTO Neil — After Hours para GRSB",afterHoursQty>=2,
+      afterHoursQty>=2?"Se encontraron dos o más unidades de After Hours Delivery.":
+      `REV021: todas las órdenes XTO de Neil Johnson con GRSB requieren dos cargos After Hours Delivery. Cantidad encontrada: ${afterHoursQty}.`);
+  }
+
 
   if(!procedureReady) suggestions.push("Carga el Sales Order Procedure REV20 para activar TAXABLE/STAMP/DISCOUNT dinámicos.");
 
