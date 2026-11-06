@@ -208,7 +208,7 @@ function extractCompanyAndWell(label, fallbackText){
       let wellText=candidate.split(",")[0].trim();
       if(i>1){
         const previous=useful[i-1];
-        if(previous && !/\\d/.test(previous) && !isAddressLine(previous) &&
+        if(previous && !/\d/.test(previous) && !isAddressLine(previous) &&
            !/^(?:XTO ENERGY INC|BTA OIL & GAS|COTERRA(?: ENERGY)?|DIAMONDBACK(?: ENERGY)?|APACHE(?: CORP| CORPORATION)?)$/i.test(previous)){
           wellText=previous+" "+wellText;
         }
