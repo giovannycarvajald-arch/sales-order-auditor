@@ -356,9 +356,6 @@ function parseSO(text){
   if(recognizedStampPhrase && !extractedNotes.toUpperCase().includes(recognizedStampPhrase)){
     extractedNotes=(extractedNotes+" "+recognizedStampPhrase).trim();
   }
-  setValue("notes",extractedNotes);"),"i").test(extractedNotes)){
-    extractedNotes=(extractedNotes+" "+recognizedStampPhrase).trim();
-  }
   setValue("notes",extractedNotes);
 
   // Totals in Odessa PDFs can be stacked vertically:
