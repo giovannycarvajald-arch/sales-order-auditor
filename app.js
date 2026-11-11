@@ -24,7 +24,7 @@ const RULES = {
 
 $("pdfInput").addEventListener("change", e => {
   state.pdfFile = e.target.files[0] || null;
-  $("fileName").textContent = state.pdfFile ? state.pdfFile.name : "Ningún PDF seleccionado";
+  $("fileName").textContent = state.pdfFile ? state.pdfFile.name : "No PDF selected";
   $("analyzeBtn").disabled = !state.pdfFile;
 });
 $("dropzone").addEventListener("dragover", e => { e.preventDefault(); $("dropzone").classList.add("drag"); });
@@ -45,7 +45,7 @@ $("saveDraftBtn").onclick = saveDraft;
 $("loadDraftBtn").onclick = loadDraft;
 $("exportHistoryBtn").onclick = exportHistory;
 $("clearHistoryBtn").onclick = () => {
-  if(confirm("¿Borrar todo el historial local?")) { localStorage.removeItem("soAuditHistory"); renderHistory(); }
+  if(confirm("Clear all local history?")) { localStorage.removeItem("soAuditHistory"); renderHistory(); }
 };
 
 function money(n){ return Number(n||0).toLocaleString("en-US",{style:"currency",currency:"USD"}); }
@@ -525,7 +525,7 @@ function parseSO(text){
   });
 
   itemRows.forEach(x=>addItem(x.pn,x.desc,x.qty,x.price,x.discount));
-  $("status").textContent = `PDF leído: ${itemRows.length} ítem(s) detectado(s). Revisa los campos y ejecuta la auditoría.`;
+  $("status").textContent = `PDF read: ${itemRows.length} item(s) detected. Review the fields and run the audit.`;
   $("status").className = itemRows.length ? "status ok" : "status bad";
 }
 
@@ -557,13 +557,13 @@ function loadPriceList(e){
     try{
       const wb=XLSX.read(ev.target.result,{type:"array",raw:true});
       const sheetName=wb.SheetNames.find(n=>normalize(n)==="PN LIST");
-      if(!sheetName) throw new Error(`No se encontró la hoja "PN LIST". Hojas: ${wb.SheetNames.join(", ")}`);
+      if(!sheetName) throw new Error(`Worksheet not found "PN LIST". Available sheets: ${wb.SheetNames.join(", ")}`);
       const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{defval:"",raw:true});
-      if(!rows.length) throw new Error("La hoja PN LIST está vacía.");
+      if(!rows.length) throw new Error("The PN LIST worksheet is empty.");
       const keys=Object.keys(rows[0]);
       const pnKey=keys.find(k=>normalize(k)==="PARTNUMBER");
       const priceKey=keys.find(k=>normalize(k)==="PRICING_UNITPRICE0");
-      if(!pnKey || !priceKey) throw new Error("La hoja PN LIST debe contener PartNumber y Pricing_UnitPrice0.");
+      if(!pnKey || !priceKey) throw new Error("The PN LIST worksheet must contain PartNumber and Pricing_UnitPrice0.");
       const map=new Map();
       rows.forEach(row=>{
         const pn=normalize(row[pnKey]);
@@ -572,16 +572,16 @@ function loadPriceList(e){
         const price=typeof raw==="number" ? raw : parseMoney(raw);
         if(price!=null && Number.isFinite(price)) map.set(pn,price);
       });
-      if(!map.size) throw new Error("No se encontraron precios válidos en Pricing_UnitPrice0.");
+      if(!map.size) throw new Error("No valid prices were found in Pricing_UnitPrice0.");
       state.priceList=map;
       localStorage.setItem("soPriceList_v2",JSON.stringify([...map.entries()]));
       localStorage.setItem("soPriceListMeta_v2",JSON.stringify({fileName:file.name,sheetName,pnKey,priceKey,count:map.size,loadedAt:new Date().toISOString()}));
       localStorage.removeItem("soPriceList");
       document.querySelectorAll(".pn").forEach(x=>updateListPriceRow({target:x}));
-      $("priceListStatus").textContent=`🟢 Price List cargada: ${map.size.toLocaleString()} PN | Hoja: ${sheetName} | ${priceKey}`;
+      $("priceListStatus").textContent=`🟢 Price List loaded: ${map.size.toLocaleString()} PN | Hoja: ${sheetName} | ${priceKey}`;
       $("priceListStatus").className="status ok";
       renderConfigurationStatus();
-    }catch(err){ $("priceListStatus").textContent="❌ No se pudo leer el Excel: "+err.message; $("priceListStatus").className="status bad"; renderConfigurationStatus(); }
+    }catch(err){ $("priceListStatus").textContent="❌ Unable to read the Excel file: "+err.message; $("priceListStatus").className="status bad"; renderConfigurationStatus(); }
   };
   reader.readAsArrayBuffer(file);
 }
@@ -593,12 +593,12 @@ function renderConfigurationStatus(){
   const procedureReady=!!state.procedureRules;
   const complete=priceReady && procedureReady;
   const details=[];
-  details.push('<div class="config-file"><span class="config-dot '+(priceReady?"ready":"missing")+'"></span><div><strong>Price List</strong><small>'+(priceReady?(escapeHtml(priceMeta?.fileName||"Excel cargado")+" · "+(priceMeta?.count||state.priceList.size).toLocaleString()+" PN"+(priceMeta?.sheetName?" · Hoja "+escapeHtml(priceMeta.sheetName):"")):"Pendiente de cargar")+'</small></div></div>');
-  details.push('<div class="config-file"><span class="config-dot '+(procedureReady?"ready":"missing")+'"></span><div><strong>Sales Order Procedure</strong><small>'+(procedureReady?(escapeHtml(procedureMeta?.fileName||"Procedure cargado")+" · "+escapeHtml(state.procedureRules.version||"Versión no identificada")):"Pendiente de cargar")+'</small></div></div>');
+  details.push('<div class="config-file"><span class="config-dot '+(priceReady?"ready":"missing")+'"></span><div><strong>Price List</strong><small>'+(priceReady?(escapeHtml(priceMeta?.fileName||"Excel loaded")+" · "+(priceMeta?.count||state.priceList.size).toLocaleString()+" PN"+(priceMeta?.sheetName?" · Hoja "+escapeHtml(priceMeta.sheetName):"")):"Not uploaded")+'</small></div></div>');
+  details.push('<div class="config-file"><span class="config-dot '+(procedureReady?"ready":"missing")+'"></span><div><strong>Sales Order Procedure</strong><small>'+(procedureReady?(escapeHtml(procedureMeta?.fileName||"Procedure cargado")+" · "+escapeHtml(state.procedureRules.version||"Versión no identificada")):"Not uploaded")+'</small></div></div>');
   const box=$("configurationStatus");
   if(!box) return;
   box.className="config-status "+(complete?"complete":"incomplete");
-  box.innerHTML='<div class="config-heading"><div><strong>'+(complete?"✓ CONFIGURACIÓN COMPLETA":"⚠ CONFIGURACIÓN INCOMPLETA")+'</strong><small>'+(complete?"Los dos documentos están disponibles en este navegador. Ya puedes auditar Sales Orders.":"Carga los documentos pendientes para habilitar una auditoría confiable.")+'</small></div><span class="config-count">'+(Number(priceReady)+Number(procedureReady))+"/2"+'</span></div><div class="config-files">'+details.join("")+'</div><p class="config-footnote">Los archivos permanecen guardados localmente en este navegador y no se comparten con otros usuarios.</p>';
+  box.innerHTML='<div class="config-heading"><div><strong>'+(complete?"✓ SETUP COMPLETE":"⚠ SETUP INCOMPLETE")+'</strong><small>'+(complete?"Both documents are available in this browser. You can now audit Sales Orders.":"Upload the missing documents to enable reliable auditing.")+'</small></div><span class="config-count">'+(Number(priceReady)+Number(procedureReady))+"/2"+'</span></div><div class="config-files">'+details.join("")+'</div><p class="config-footnote">Files remain stored locally in this browser and are not shared with other users.</p>';
 }
 
 function restorePriceList(){
@@ -607,11 +607,11 @@ function restorePriceList(){
     state.priceList=raw?new Map(JSON.parse(raw)):new Map();
     const meta=JSON.parse(localStorage.getItem("soPriceListMeta_v2")||"null");
     $("priceListStatus").textContent=state.priceList.size
-      ? `🟢 Price List local disponible: ${state.priceList.size.toLocaleString()} PN${meta?.sheetName?` | ${meta.sheetName}`:""}`
-      : "No hay Price List cargada todavía.";
+      ? `🟢 Local Price List available: ${state.priceList.size.toLocaleString()} PN${meta?.sheetName?` | ${meta.sheetName}`:""}`
+      : "No Price List has been uploaded yet.";
     $("priceListStatus").className=state.priceList.size?"status ok":"status";
     renderConfigurationStatus();
-  }catch{ state.priceList=new Map(); $("priceListStatus").textContent="No hay Price List cargada todavía."; renderConfigurationStatus(); }
+  }catch{ state.priceList=new Map(); $("priceListStatus").textContent="No Price List has been uploaded yet."; renderConfigurationStatus(); }
 }
 
 function cleanProcedureName(s){
@@ -632,7 +632,7 @@ function parseProcedureLists(text,fileName=""){
   const confirmationIdx=source.indexOf("CONFIRMATION CHECK",discountIdx>=0?discountIdx+8:0);
 
   if(taxableIdx<0||stampIdx<0||discountIdx<0||confirmationIdx<0){
-    throw new Error("No se encontraron correctamente las secciones TAXABLE, STAMP, DISCOUNT y CONFIRMATION CHECK. Verifica que cargaste el Procedure REV021 o una revisión compatible.");
+    throw new Error("Could not correctly identify the TAXABLE, STAMP, DISCOUNT, and CONFIRMATION CHECK sections. Make sure you uploaded Procedure REV021 or a compatible revision.");
   }
 
   const taxableText=source.slice(taxableIdx+7,stampIdx).trim();
@@ -738,7 +738,7 @@ async function loadProcedure(e){
     const text=await extractPDFText(file);
     const rules=parseProcedureLists(text,file.name);
     if(Number((rules.version.match(/\d+/)||[])[0]||0)<21)
-      throw new Error("La app ya está actualizada para REV021. Carga la versión REV021 o una posterior.");
+      throw new Error("The app already requires REV021 or later. Upload Procedure REV021 or a newer revision.");
     state.procedureFile=file;
     state.procedureRules=rules;
     localStorage.setItem("soaProcedureRules_v2",JSON.stringify(rules));
@@ -746,12 +746,12 @@ async function loadProcedure(e){
     const total=rules.taxable.length+rules.stamp.length+rules.discounts.length;
     const xtoTax=rules.taxable.some(x=>/\bXTO\b/i.test(x));
     const xtoStamp=rules.stamp.some(x=>/\bXTO\b/i.test(x));
-    $("procedureStatus").textContent=`🟢 Procedure cargado: ${file.name} | ${rules.version} | ${total} reglas (${rules.taxable.length} taxable, ${rules.stamp.length} stamp, ${rules.discounts.length} discount) | XTO TAXABLE: ${xtoTax?"SI":"NO"} | XTO STAMP: ${xtoStamp?"SI":"NO"}`;
+    $("procedureStatus").textContent=`🟢 Procedure loaded: ${file.name} | ${rules.version} | ${total} rules (${rules.taxable.length} taxable, ${rules.stamp.length} stamp, ${rules.discounts.length} discount) | XTO TAXABLE: ${xtoTax?"YES":"NO"} | XTO STAMP: ${xtoStamp?"YES":"NO"}`;
     $("procedureStatus").className="status ok";
     renderConfigurationStatus();
   }catch(err){
     state.procedureRules=null;
-    $("procedureStatus").textContent="❌ No se pudo leer el procedure: "+err.message;
+    $("procedureStatus").textContent="❌ Unable to read the Procedure: "+err.message;
     $("procedureStatus").className="status bad";
     renderConfigurationStatus();
   }
@@ -767,25 +767,25 @@ function restoreProcedure(){
       const revision=Number((String(p.version||"").match(/\d+/)||[])[0]||0);
       if(revision<21){
         state.procedureRules=null;
-        $("procedureStatus").textContent=`⚠ El Procedure guardado es ${p.version||"una versión anterior"}. Carga el PDF REV021 para activar las reglas vigentes.`;
+        $("procedureStatus").textContent=`⚠ The saved Procedure is ${p.version||"an earlier version"}. Upload Procedure REV021 to enable the current rules.`;
         $("procedureStatus").className="status bad";
         return;
       }
-      $("procedureStatus").textContent=`🟢 Procedure local disponible: ${p.version}${meta?.fileName?` | ${meta.fileName}`:""} | ${p.taxable.length} taxable · ${p.stamp.length} stamp · ${p.discounts.length} discount`;
+      $("procedureStatus").textContent=`🟢 Local Procedure available: ${p.version}${meta?.fileName?` | ${meta.fileName}`:""} | ${p.taxable.length} taxable · ${p.stamp.length} stamp · ${p.discounts.length} discount`;
       $("procedureStatus").className="status ok";
       renderConfigurationStatus();
       return;
     }
   }catch{}
-  $("procedureStatus").textContent="Carga el Sales Order Procedure para activar las reglas dinámicas.";
+  $("procedureStatus").textContent="Upload the Sales Order Procedure to enable dynamic rules.";
   $("procedureStatus").className="status";
   renderConfigurationStatus();
 }
 
 async function analyzePDF(){
-  $("status").textContent="Leyendo PDF…"; $("status").className="status";
+  $("status").textContent="Reading PDF…"; $("status").className="status";
   try{ parseSO(await extractPDFText(state.pdfFile)); }
-  catch(err){ $("status").textContent="Error leyendo PDF: "+err.message; $("status").className="status bad"; }
+  catch(err){ $("status").textContent="Error reading PDF: "+err.message; $("status").className="status bad"; }
 }
 
 function getData(){
@@ -825,17 +825,17 @@ function runAudit(){
   const d=getData(), r=[], suggestions=[];
   const c=customerKey(d.customer);
 
-  addResult(r,"TAXES / STAMP / DISCOUNT / EXTRA INFO",true,"Revisión inicial ejecutada. Reglas específicas abajo.");
+  addResult(r,"TAXES / STAMP / DISCOUNT / EXTRA INFO",true,"Initial review completed. Specific checks are listed below.");
   const sold=customerKey(d.soldTo), ship=customerKey(d.shipTo);
   const companyOK=!sold||!ship||sold===ship;
   const wellsOK=!d.soldToWell||!d.shipToWell||normalize(d.soldToWell)===normalize(d.shipToWell);
   const companyDetail=!companyOK
-    ? "ERROR: Sold To ("+d.soldTo+") y Ship To ("+d.shipTo+") son compañías diferentes. Confirmar con el vendedor antes de aprobar."
-    : "Compañías consistentes.";
+    ? "ERROR: Sold To ("+d.soldTo+") and Ship To ("+d.shipTo+") are different companies. Confirm with the salesperson before approval."
+    : "Companies match.";
   addResult(r,"Sold To vs Ship To",companyOK && wellsOK,
     !companyOK ? companyDetail
-      : (!wellsOK ? "ERROR: well diferente entre Sold To y Ship To." : "Misma compañía / well consistente o no especificado."));
-  addResult(r,"Teléfono del contacto",!!d.phone,"Phone encontrado.");
+      : (!wellsOK ? "ERROR: Well differs between Sold To and Ship To." : "Same company / well matches or is not specified."));
+  addResult(r,"Contact phone",!!d.phone,"Phone found.");
 
   const de=deliveryExpected(d);
   const deliveryText=normalize(d.deliveryText);
@@ -865,20 +865,20 @@ function runAudit(){
     delOK=true;
     deliveryKind="warning";
     deliveryDetail=(normalize(d.shippingMethod)==="FIELD SERVICE"?"Shipping Method: FIELD SERVICE. ":"")+
-      "Se encontró PICK UP CHARGE: "+pickupChargeItems.map(x=>x.pn+" "+x.desc+" ("+money(x.price)+" x "+x.qty+")").join(" | ")+
-      ". No se encontró ningún Delivery Charge. Verificar si el cliente recogerá la herramienta en OSI después de la reparación.";
+      "PICK UP CHARGE found: "+pickupChargeItems.map(x=>x.pn+" "+x.desc+" ("+money(x.price)+" x "+x.qty+")").join(" | ")+
+      ". No Delivery Charge was found. Verify whether the customer will pick up the tool at OSI after the repair.";
   }else if(de.type==="UNKNOWN"){
     // Without date/time the schedule and applicable tariff cannot be verified.
     // If a pickup and outbound charge coexist, flag the missing validation.
     delOK=!fieldServicePickup;
     deliveryKind=fieldServicePickup && deliveryItems.length>0?"warning":"";
-    deliveryDetail="No se pudo validar fecha/hora; no es posible confirmar el horario ni la tarifa del Delivery Charge."+
-      (fieldServicePickup?" Se encontraron PICK UP CHARGE y Delivery Charge, pero se debe confirmar el cargo según el horario.":"");
+    deliveryDetail="Date/time could not be validated; the Delivery Charge schedule and rate cannot be confirmed."+
+      (fieldServicePickup?" PICK UP CHARGE and Delivery Charge were both found, but the charge must be confirmed against the schedule.":"");
   }else if(de.type==="NONE"){
     delOK=deliveryItems.length===0;
     deliveryDetail=deliveryItems.length
-      ?"No se esperaba Delivery Charge para este caso, pero se encontró: "+deliveryItems.map(x=>x.pn+" "+x.desc+" ("+money(x.price)+" x "+x.qty+")").join(" | ")+"."
-      :"Sin cargo requerido. "+de.reason;
+      ?"No Delivery Charge was expected for this case, but the following was found: "+deliveryItems.map(x=>x.pn+" "+x.desc+" ("+money(x.price)+" x "+x.qty+")").join(" | ")+"."
+      :"No charge required. "+de.reason;
   }else{
     // Apply the same schedule/type/price checks whether or not PICK UP CHARGE
     // is present. A pickup charge does not make an incorrect delivery fee valid.
@@ -893,9 +893,9 @@ function runAudit(){
     delOK=hasExpectedItem && itemPriceOK;
     deliveryDetail=de.type+" — "+money(de.price)+". "+de.reason+
       (deliveryItems.length
-        ?" Se encontró en la SO: "+deliveryItems.map(x=>x.pn+" "+x.desc+" ("+money(x.price)+" x "+x.qty+")").join(" | ")+"."
-        :" No se encontró un ítem de Delivery Charge correspondiente en la SO.")+
-      (fieldServicePickup?" También se encontró PICK UP CHARGE; se validó igualmente el Delivery Charge contra el horario y la tarifa correspondiente.":"");
+        ?" Found on the Sales Order: "+deliveryItems.map(x=>x.pn+" "+x.desc+" ("+money(x.price)+" x "+x.qty+")").join(" | ")+"."
+        :" No matching Delivery Charge item was found on the Sales Order.")+
+      (fieldServicePickup?" PICK UP CHARGE was also found; the Delivery Charge was still validated against the applicable schedule and rate.":"");
   }
   addResult(r,"Delivery Charge",delOK,deliveryDetail,deliveryKind);
 
@@ -913,10 +913,10 @@ function runAudit(){
   ].filter(Boolean);
   addResult(r,"Inspection Fee",!inspectionRequired||hasInspection,
     inspectionRequired&&!hasInspection
-      ?"ERROR: se requiere INSPECTION FEE porque "+inspectionReasons.join(" y ")+", pero no se encontró el cargo en la SO."
+      ?"ERROR: INSPECTION FEE is required because "+inspectionReasons.join(" and ")+", but the fee was not found on the Sales Order."
       :inspectionRequired
-        ?"Inspection Fee encontrado. Regla activada por "+inspectionReasons.join(" y ")+"."
-        :"No se encontró una condición que requiera Inspection Fee.");
+        ?"Inspection Fee found. Rule triggered by "+inspectionReasons.join(" and ")+"."
+        :"No condition requiring an Inspection Fee was found.");
 
   let priceErrors=[], specialPNs=[], reinstalledZeroItems=[];
   const notesNormalized=normalize(d.notes);
@@ -944,20 +944,20 @@ function runAudit(){
   });
   const priceListReady=state.priceList.size>0;
   const priceResultOK=priceListReady && priceErrors.length===0;
-  addResult(r,"Precios vs Excel",priceResultOK,
+  addResult(r,"Prices vs Excel",priceResultOK,
     priceListReady
-      ? (priceErrors.length?priceErrors.join(" | "):"Todos los PN encontrados coinciden con la Price List cargada.")
-      : "ERROR: Price List no cargada; no se puede verificar contra Excel.");
+      ? (priceErrors.length?priceErrors.join(" | "):"All recognized part numbers match the uploaded Price List.")
+      : "ERROR: Price List not uploaded; prices cannot be checked against Excel.");
   if(specialPNs.length){
     const uniqueSpecialPNs=[...new Set(specialPNs)];
-    addResult(r,"PN especiales no encontrados",true,
-      `Los siguientes PN no aparecen en la Price List: ${uniqueSpecialPNs.join(", ")}. Confirmar el nombre/descripción y el precio directamente con el vendedor antes de procesar la orden.`,"warning");
+    addResult(r,"PN especiales not founds",true,
+      `The following part numbers are not listed in the Price List: ${uniqueSpecialPNs.join(", ")}. Confirmar el nombre/descripción and el precio directamente con el vendedor antes de procesar la orden.`,"warning");
   }
   if(reinstalledZeroItems.length){
-    addResult(r,"Herramienta reutilizada / reinstalada",true,
-      "Precio $0.00 aceptado porque las notas de la SO identifican el mismo PN como REINSTALLED/REUSED. Verificar que la herramienta fue reinstalada y que no corresponde cobrar una nueva unidad. PN: "+reinstalledZeroItems.map(x=>x.pn+" (precio de lista "+money(x.listPrice)+")").join(" | "),"warning");
+    addResult(r,"Reused / reinstalled tool",true,
+      "Precio $0.00 aceptado porque las notas de la SO identifican el mismo PN como REINSTALLED/REUSED. Verificar que la herramienta fue reinstalada and que no corresponde cobrar una nueva unidad. PN: "+reinstalledZeroItems.map(x=>x.pn+" (precio de lista "+money(x.listPrice)+")").join(" | "),"warning");
   }
-  if(!priceListReady) suggestions.push("Carga tu OSI LIST PRICE para activar la verificación de precios.");
+  if(!priceListReady) suggestions.push("Upload your OSI LIST PRICE to enable price verification.");
 
   const procedureReady=!!state.procedureRules;
   let taxOK=true, taxDetail="";
@@ -969,22 +969,22 @@ function runAudit(){
       normalize(a.to) && customerKey(d.customer)==="XTO" && normalize(a.to)==="XTO"
     );
     const aliasNote=alias ? ` Regla aplicada por alias: ${alias.from} → ${alias.to} (${alias.reason}).` : "";
-    taxDetail=`Procedure: ${state.procedureRules.version} reconoce ${d.customer} como TAXABLE → Tax esperado 8.25%: ${money(expectedTax)}.${aliasNote}`;
+    taxDetail=`Procedure: ${state.procedureRules.version} identifies ${d.customer} as TAXABLE → Expected tax at 8.25%: ${money(expectedTax)}.${aliasNote}`;
   }else if(procedureReady){
     taxOK=Math.abs(d.tax)<0.01;
-    taxDetail=taxOK?`Procedure: ${d.customer} no aparece en TAXABLE → Tax $0.00.`:`ERROR: ${d.customer} no aparece en TAXABLE pero la SO tiene Tax ${money(d.tax)}.`;
+    taxDetail=taxOK?`Procedure: ${d.customer} is not listed as TAXABLE → Tax $0.00.`:`ERROR: ${d.customer} is not listed as TAXABLE, but the Sales Order includes tax ${money(d.tax)}.`;
   }else{
     taxOK=false;
-    taxDetail="ERROR: carga el Sales Order Procedure vigente antes de aprobar la SO.";
+    taxDetail="ERROR: upload the current Sales Order Procedure before approving the Sales Order.";
   }
-  addResult(r,"Cálculo de TAXES",taxOK,taxDetail);
+  addResult(r,"TAX Calculation",taxOK,taxDetail);
 
   const stampRequired=procedureReady ? procedureHas(d.customer,state.procedureRules.stamp) : false;
   const stampOK=procedureReady ? (!stampRequired || hasPhrase(d.notes,["PLEASE GET STAMPED","GET STAMP!","GET THE STAMP!","PLEASE PROVIDE AFE & GL ACCOUNT"])) : false;
   addResult(r,"Frase STAMP",stampOK,
     procedureReady
-      ? (stampRequired ? `Procedure: ${state.procedureRules.version} requiere STAMP; la SO debe contener una frase STAMP en Notes. Si la regla proviene de EXXON MOBIL, aplica a XTO por la nota “ALL EXXON ORDERS WILL BE XTO”.` : "La empresa no está listada en STAMP del procedure.")
-      : "ERROR: carga el Sales Order Procedure vigente antes de aprobar la SO.");
+      ? (stampRequired ? `Procedure: ${state.procedureRules.version} requires STAMP; the Sales Order Notes must contain a STAMP phrase. If the rule comes from EXXON MOBIL, it applies to XTO based on the note “ALL EXXON ORDERS WILL BE XTO”.` : "The company is not listed under STAMP in the Procedure.")
+      : "ERROR: upload the current Sales Order Procedure before approving the Sales Order.");
 
   const discountRule=procedureReady ? findProcedureDiscount(d.customer) : null;
   if(procedureReady && discountRule){
@@ -992,25 +992,25 @@ function runAudit(){
     d.items.forEach(x=>{
       if(/DELIVERY CHARGE|INSPECTION FEE/i.test(x.desc)) return;
       if(Math.abs((x.discount||0)-discountRule.percent)>0.01)
-        discountErrors.push(`${x.pn}: descuento SO ${x.discount||0}% vs requerido ${discountRule.percent}%`);
+        discountErrors.push(`${x.pn}: Sales Order discount ${x.discount||0}% vs. required ${discountRule.percent}%`);
     });
     addResult(r,"DISCOUNT",discountErrors.length===0,
-      discountErrors.length?discountErrors.join(" | "):`Procedure: ${d.customer} requiere ${discountRule.percent}% y todos los ítems aplicables tienen ese descuento.`);
+      discountErrors.length?discountErrors.join(" | "):`Procedure: ${d.customer} requires ${discountRule.percent}% and todos los ítems aplicables tienen ese descuento.`);
   }else if(procedureReady){
-    addResult(r,"DISCOUNT",true,`La empresa ${d.customer} no aparece en la lista DISCOUNT del procedure.`);
+    addResult(r,"DISCOUNT",true,`The company ${d.customer} is not listed under DISCOUNT in the Procedure.`);
   }else{
-    addResult(r,"DISCOUNT",false,"ERROR: carga el Sales Order Procedure vigente antes de aprobar la SO.");
+    addResult(r,"DISCOUNT",false,"ERROR: upload the current Sales Order Procedure before approving the Sales Order.");
   }
 
   const allPriced=d.items.length>0 && d.items.every(x=>x.price>0);
-  addResult(r,"Todos los ítems tienen precio",allPriced,allPriced?"Todos tienen precio.":"ERROR: uno o más ítems no tienen precio.");
+  addResult(r,"All items have a price",allPriced,allPriced?"All items have a price.":"ERROR: one or more items are missing a price.");
 
   const grs=d.items.some(x=>/GRS|GAS RELEASE SYSTEM/i.test(x.desc));
   const hasReverseTrigger=d.items.some(x=>x.pn==="1015-0006-00"||x.pn==="1015-0008-00");
-  if(!grs && hasReverseTrigger) suggestions.push("OBSERVACIÓN GRS: la configuración contiene un PN que puede requerir revisión de GRS/Reverse Flow. Confirmar configuración antes de aprobar.");
+  if(!grs && hasReverseTrigger) suggestions.push("GRS NOTE: The configuration contains a part number that may require a GRS/Reverse Flow review. Confirm the configuration before approval.");
 
   if(c==="DIAMONDBACK" && !hasPhrase(d.notes,["AFE & GL","PLEASE PROVIDE AFE & GL ACCOUNT"]))
-    suggestions.push("Diamondback: confirmar que estén presentes AFE & GL Account.");
+    suggestions.push("Diamondback: confirm that AFE & GL Account are included.");
 
   // REV021 — Additional customer/product-specific instructions.
   const hasDesc=(pattern)=>d.items.some(x=>pattern.test(normalize(x.desc)));
@@ -1019,17 +1019,17 @@ function runAudit(){
     const grsItems=d.items.filter(x=>/\bGRS\b|GAS RELEASE SYSTEM/.test(normalize(x.desc)));
     if(grsItems.length){
       const bad=grsItems.filter(x=>Math.abs((x.discount||0)-25)>0.01);
-      addResult(r,"Diamondback — descuento GRS",bad.length===0,
-        bad.length?bad.map(x=>`${x.pn}: descuento ${x.discount||0}% vs requerido 25%.`).join(" | "):
-        "REV021: los equipos GRS de Diamondback deben llevar 25% de descuento.");
+      addResult(r,"Diamondback — GRS discount",bad.length===0,
+        bad.length?bad.map(x=>`${x.pn}: descuento ${x.discount||0}% vs. required 25%.`).join(" | "):
+        "REV021: Diamondback GRS equipment must have a 25% discount.");
     }
   }
 
   if(/VALENCE OPERATING/.test(normalize(d.customer))){
     const signOK=hasPhrase(d.notes,["MUST GET COMPANY MAN SIGN"]);
     const taxExempt=Math.abs(d.tax)<0.01;
-    addResult(r,"Valence — firma y tax exempt",signOK&&taxExempt,
-      `REV021 requiere la nota “MUST GET COMPANY MAN SIGN” y tratamiento Tax Exempt. Nota: ${signOK?"presente":"FALTA"}; Tax: ${money(d.tax)}.`);
+    addResult(r,"Valence — firma and tax exempt",signOK&&taxExempt,
+      `REV021 requires la nota “MUST GET COMPANY MAN SIGN” and tratamiento Tax Exempt. Nota: ${signOK?"present":"MISSING"}; Tax: ${money(d.tax)}.`);
   }
 
   if(hasDesc(/SLOTTED GAS SHIELD/)){
@@ -1052,29 +1052,29 @@ function runAudit(){
 
   if(/CONSIGNMENT/.test(notesNormalized)){
     const zeroValue=Math.abs(d.total)<0.01;
-    addResult(r,"Consignment — valor de la SO",zeroValue,
-      zeroValue?"Consignment order con valor total $0.00.":"REV021: las órdenes de consignment deben tener el valor de la Sales Order en $0.00.");
+    addResult(r,"Consignment — Sales Order value",zeroValue,
+      zeroValue?"Consignment order con valor total $0.00.":"REV021: consignment orders must have a Sales Order total of $0.00.");
   }
 
   if((/OXY|PERMIAN RESOURCES|COTERRA|APACHE/.test(normalize(d.customer))) &&
      hasDesc(/SAND LIFT|DESANDER/)){
-    addResult(r,"Consignment — verificación de herramientas",true,
-      "REV021: verificar el Excel de consignment en sitio y cruzar la información con Field Services; si hay herramientas en consignment, completar la hoja de reinstalación correspondiente.","warning");
+    addResult(r,"Consignment — tool verification",true,
+      "REV021: verificar el Excel de consignment en sitio and cruzar la información con Field Services; si hay herramientas en consignment, completar la hoja de reinstalación correspondiente.","warning");
   }
 
   if(/FIREBIRD/.test(normalize(d.customer))){
-    addResult(r,"Firebird — cambio de entidad",true,
-      "REV021 indica que desde el 23/09/2026 todas las órdenes Firebird se cambian a Continental. Confirmar que la orden esté creada bajo Continental.","warning");
+    addResult(r,"Firebird — entity change",true,
+      "REV021 states that, effective 09/23/2026, all Firebird orders must be changed to Continental. Confirm that the order is created under Continental.","warning");
   }
 
   if(/CRESCENT ENERGY/.test(normalize(d.customer))){
     const crescentErrors=[];
     d.items.filter(x=>/DESANDER/.test(normalize(x.desc))).forEach(x=>{
       const expected=/BORONIZED/.test(normalize(x.desc))?4900:3000;
-      if(Math.abs(x.price-expected)>0.01) crescentErrors.push(`${x.pn}: ${money(x.price)} vs requerido ${money(expected)}.`);
+      if(Math.abs(x.price-expected)>0.01) crescentErrors.push(`${x.pn}: ${money(x.price)} vs. required ${money(expected)}.`);
     });
     if(d.items.some(x=>/DESANDER/.test(normalize(x.desc)))){
-      addResult(r,"Crescent Energy — precio desander",crescentErrors.length===0,
+      addResult(r,"Crescent Energy — desander pricing",crescentErrors.length===0,
         crescentErrors.length?crescentErrors.join(" | "):"REV021: Desander $3,000 / Boronized Desander $4,900.");
     }
   }
@@ -1084,7 +1084,7 @@ function runAudit(){
     if(compact.length){
       const bad=compact.filter(x=>Math.abs(x.price-5500)>0.01);
       addResult(r,"OXY / Occidental Permian — Sand Lift Compact",bad.length===0,
-        bad.length?bad.map(x=>`${x.pn}: ${money(x.price)} vs requerido $5,500.`).join(" | "):
+        bad.length?bad.map(x=>`${x.pn}: ${money(x.price)} vs. required $5,500.`).join(" | "):
         "REV021: Sand Lift Compact debe tener precio de $5,500.");
     }
   }
@@ -1103,8 +1103,8 @@ function runAudit(){
     const sixScrews=/\b6\s+SCREWS?\b/i.test(d.notes);
     const pressure=/\b4500\s*PSI\b/i.test(d.notes);
     addResult(r,"PMM — configuración",true,
-      sixScrews&&pressure?"Notes indica 6 screws y 4,500 psi.":
-      "REV021: verificar que PMM tenga 6 screws, set pressure de 4,500 psi y etiqueta con presión y nombre del pozo.","warning");
+      sixScrews&&pressure?"Notes indica 6 screws and 4,500 psi.":
+      "REV021: verificar que PMM tenga 6 screws, set pressure de 4,500 psi and etiqueta con presión and nombre del pozo.","warning");
   }
 
   if(/DONOVAN SANCHEZ/.test(normalize(d.salesPerson)) &&
@@ -1112,13 +1112,13 @@ function runAudit(){
      hasDesc(/COMPACT 350 SAND LIFT/)){
     const bad=d.items.filter(x=>/COMPACT 350 SAND LIFT/.test(normalize(x.desc))&&Math.abs(x.price-5500)>0.01);
     addResult(r,"Donovan — Compact 350 Sand Lift",bad.length===0,
-      bad.length?bad.map(x=>`${x.pn}: ${money(x.price)} vs requerido $5,500.`).join(" | "):
-      "REV021: para Donovan con Riley Permian o Devon, Compact 350 Sand Lift debe tener precio de $5,500.");
+      bad.length?bad.map(x=>`${x.pn}: ${money(x.price)} vs. required $5,500.`).join(" | "):
+      "REV021: for Donovan with Riley Permian or Devon, Compact 350 Sand Lift must be priced at $5,500.");
   }
 
   if(/OXY/.test(normalize(d.customer))){
     addResult(r,"OXY — entidad del pozo",true,
-      "REV021: verificar en DrillingEdge si el pozo pertenece a OXY NM u OXY USA; son entidades distintas y tienen tratamiento fiscal diferente.","warning");
+      "REV021: verificar en DrillingEdge si el pozo pertenece a OXY NM u OXY USA; son entidades distintas and tienen tratamiento fiscal diferente.","warning");
   }
 
   if(/PERMIAN RESOURCES/.test(normalize(d.customer)) &&
@@ -1127,8 +1127,8 @@ function runAudit(){
     const wrong=vortexItems.filter(x=>Math.abs(Number(x.price)-3333)>0.01);
     addResult(r,"Permian Resources — ESP Vortex Desander",wrong.length===0,
       wrong.length
-        ? wrong.map(x=>`${x.pn}: precio SO ${money(x.price)}; precio especial REV021 $3,333.00.`).join(" | ")
-        : "REV021: ESP Vortex Desander para Permian Resources validado al precio especial de $3,333.00 por unidad.");
+        ? wrong.map(x=>`${x.pn}: Sales Order price ${money(x.price)}; REV021 special price $3,333.00.`).join(" | ")
+        : "REV021: ESP Vortex Desander for Permian Resources validated at the special price of $3,333.00 per unit.");
   }
 
   const cardFee=d.items.find(x=>x.pn==="1002-0002-00");
@@ -1138,8 +1138,8 @@ function runAudit(){
     const feeExpected=Math.round(baseValue*0.0375*100)/100;
     const feeOK=!!cardFee&&Math.abs(feeActual-feeExpected)<=0.02;
     addResult(r,"Credit card processing fee",feeOK,
-      feeOK?`REV021: fee del 3.75% correctamente aplicado (${money(feeActual)}).`:
-      `REV021: se requiere PN 1002-0002-00 por el 3.75% del valor de la venta. Esperado: ${money(feeExpected)}; encontrado: ${cardFee?money(feeActual):"no encontrado"}. Verificar también que TAX se aplique al fee cuando el cliente sea taxable.`);
+      feeOK?`REV021: 3.75% fee correctly applied (${money(feeActual)}).`:
+      `REV021: se requires PN 1002-0002-00 por el 3.75% del valor de la venta. Esperado: ${money(feeExpected)}; found: ${cardFee?money(feeActual):"not found"}. Also verify that TAX is applied to the fee when the customer is taxable.`);
   }
 
   if(procedureReady && !procedureHas(d.customer,state.procedureRules.taxable) &&
@@ -1147,37 +1147,37 @@ function runAudit(){
      !procedureHas(d.customer,state.procedureRules.stamp) &&
      !findProcedureDiscount(d.customer)){
     addResult(r,"Tax status — confirmar empresa",true,
-      "REV021: la empresa no aparece en TAXABLE, STAMP ni DISCOUNT. Si es nueva o no común, confirmar con el vendedor si corresponde incluir TAX.","warning");
+      "REV021: the company is not listed under TAXABLE, STAMP, or DISCOUNT. If it is new or uncommon, confirm with the salesperson whether TAX should be applied.","warning");
   }
 
-  if(!procedureReady) suggestions.push("Carga el Sales Order Procedure REV021 o una revisión posterior para activar TAXABLE/STAMP/DISCOUNT dinámicos.");
+  if(!procedureReady) suggestions.push("Upload Sales Order Procedure REV021 or a later revision to enable dynamic TAXABLE/STAMP/DISCOUNT rules.");
 
   const errors=r.filter(x=>!x.ok);
-  $("resultBanner").textContent=errors.length?`🔴 NOT APPROVED — ${errors.length} error(es)`:"🟢 APPROVED — 0 errores";
+  $("resultBanner").textContent=errors.length?`🔴 NOT APPROVED — ${errors.length} error(s)`:"🟢 APPROVED — 0 errores";
   $("resultBanner").className="result "+(errors.length?"bad":"ok");
   $("results").innerHTML=r.map(x=>`<div class="audit-row"><div class="name">${x.name}</div><div>${escapeHtml(x.detail)}</div><div class="${x.kind==='warning'?'obs':(x.ok?'pass':'fail')}">${x.kind==='warning'?'⚠ REVIEW':(x.ok?'✓ OK':'✕ ERROR')}</div></div>`).join("");
-  $("suggestions").innerHTML=suggestions.length?`<div class="suggestions"><strong>Correcciones / observaciones</strong><ul>${suggestions.map(x=>`<li>${escapeHtml(x)}</li>`).join("")}</ul></div>`:"";
+  $("suggestions").innerHTML=suggestions.length?`<div class="suggestions"><strong>Corrections / notes</strong><ul>${suggestions.map(x=>`<li>${escapeHtml(x)}</li>`).join("")}</ul></div>`:"";
   saveHistory(d,errors.length,r,suggestions);
 }
 
 function saveDraft(){
   localStorage.setItem("soDraft",JSON.stringify(getData()));
-  $("status").textContent="Borrador guardado localmente."; $("status").className="status ok";
+  $("status").textContent="Draft saved locally."; $("status").className="status ok";
 }
 function loadDraft(){
   try{
     const d=JSON.parse(localStorage.getItem("soDraft")||"null");
     if(!d){
-      $("status").textContent="No hay ningún borrador guardado.";
+      $("status").textContent="No saved draft was found.";
       $("status").className="status";
       return;
     }
     ["soNumber","customer","soldTo","shipTo","soldToWell","shipToWell","contact","phone","deliveryDate","deliveryTime","deliveryText","notes","subtotal","tax","total"].forEach(k=>setValue(k,d[k]));
     $("itemsBody").innerHTML=""; (d.items||[]).forEach(x=>addItem(x.pn,x.desc,x.qty,x.price,x.discount||0));
-    $("status").textContent="Borrador local cargado correctamente.";
+    $("status").textContent="Local draft loaded successfully.";
     $("status").className="status ok";
   }catch(err){
-    $("status").textContent="No se pudo cargar el borrador: "+err.message;
+    $("status").textContent="Unable to load draft: "+err.message;
     $("status").className="status bad";
   }
 }
@@ -1189,7 +1189,7 @@ function saveHistory(d,errorCount,results,suggestions){
 }
 function renderHistory(){
   const h=JSON.parse(localStorage.getItem("soAuditHistory")||"[]");
-  $("history").innerHTML=h.length?h.map(x=>`<div class="history-item"><strong>${escapeHtml(x.so||"SO")}</strong> — ${escapeHtml(x.customer)} — ${x.status} — ${x.errors} error(es) <span class="small">${new Date(x.date).toLocaleString()}</span></div>`).join(""):"<span class='small'>No hay auditorías guardadas.</span>";
+  $("history").innerHTML=h.length?h.map(x=>`<div class="history-item"><strong>${escapeHtml(x.so||"SO")}</strong> — ${escapeHtml(x.customer)} — ${x.status} — ${x.errors} error(s) <span class="small">${new Date(x.date).toLocaleString()}</span></div>`).join(""):"<span class='small'>No audit records saved.</span>";
 }
 function exportHistory(){
   const blob=new Blob([localStorage.getItem("soAuditHistory")||"[]"],{type:"application/json"});
