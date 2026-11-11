@@ -4,7 +4,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
 
 const $ = id => document.getElementById(id);
-const state = { pdfFile:null, priceList:new Map(), items:[], procedureFile:null, procedureRules:null, pdfLayout:[], shippingMethod:"", salesPerson:"", actualNotes:"" };
+const state = { pdfFile:null, priceList:new Map(), items:[], procedureFile:null, procedureRules:null, pdfLayout:[], shippingMethod:"", salesPerson:"" };
 
 const PN_REGEX = /^\d{2,4}-\d{4}-\d{2}(?:-\d{2})?$/;
 
@@ -428,54 +428,29 @@ function parseSO(text){
     if(!currentDeliveryText) setValue("deliveryText", `${sourceLabel}: ${date}${time ? ` ${time}` : ""}`);
   }
 
-  // The visible "Stamp / Notes" field on Odessa Sales Orders starts at
-  // Sales person and includes Contact, Delivery, stamp instructions, and Notes.
-  // Keep that full block for STAMP validation and display, while storing the
-  // actual free-text Notes paragraph separately for keyword-based rules.
+  // Preserve the complete Notes section for documented zero-charge/reinstalled items.
+  const notesIdx=lines.findIndex(x=>/^Notes\s*:/i.test(x));
   let extractedNotes="";
-  let actualNotes="";
-  const stopSection=/^(?:RETURN\s+POLICY|SUBTOTAL|TAX|TOTAL|SIGN(?:\s+DATE)?|DELIVERY\s+TICKET|SHIPPING\s+METHOD|CUSTOMER\s+P\.?O\.?|INVENTORY\s+LOCATION|LN\s*#|DESCRIPTION|QUANTITY|UNIT\s+PRICE|DISC%|AMOUNT)\b/i;
-  for(const page of state.pdfLayout||[]){
-    const rows=page.rows;
-    const notesIndex=rows.findIndex(row=>/^\s*NOTES\s*:/i.test(row.text.trim()) || row.items.some(it=>/^\s*NOTES\s*:/i.test(it.text.trim())));
-    if(notesIndex<0) continue;
-    // PDF.js may split the bold "Sales person:" label into multiple text
-    // fragments, so detect it from the reconstructed row text as well.
-    let startIndex=rows.findIndex(row=>/^\s*SALES\s*PERSON\s*:/i.test(row.text.trim()) || row.items.some(it=>/^\s*SALES\s*PERSON\s*:/i.test(it.text.trim())));
-    if(startIndex<0) startIndex=notesIndex;
-    const visibleLines=[];
-    const actualLines=[];
-    for(let i=startIndex;i<rows.length;i++){
-      const row=rows[i];
-      const rowText=row.text.replace(/\s+/g," ").trim();
-      if(!rowText) continue;
-      if(i>notesIndex && stopSection.test(rowText)) break;
-      if(i>notesIndex && /^(?:SOLD\s+TO|SHIP\s+TO|CUSTOMER\s+P\.?O\.?|INVENTORY\s+LOCATION|DELIVERY\s+TICKET|SHIPPING\s+METHOD)\s*:/i.test(rowText)) break;
-      visibleLines.push(rowText);
-      if(i>=notesIndex){
-        const noteLabelItem=row.items.find(it=>/^\s*NOTES\s*:/i.test(it.text.trim()));
-        if(i===notesIndex){
-          const textAfterLabel=row.items
-            .filter(it=>it.x>=(noteLabelItem?.x??0)-2)
-            .sort((a,b)=>a.x-b.x)
-            .map(it=>it.text.replace(/^\s*NOTES\s*:\s*/i,""))
-            .filter(Boolean).join(" ").trim();
-          if(textAfterLabel) actualLines.push(textAfterLabel);
-        }else{
-          actualLines.push(rowText);
-        }
-      }
+  if(notesIdx>=0){
+    const noteLines=[];
+    for(let i=notesIdx;i<lines.length;i++){
+      if(i>notesIdx && /^(?:Subtotal|Tax|Total|Sign|Date)\s*$/i.test(lines[i])) break;
+      noteLines.push(lines[i]);
     }
-    extractedNotes=visibleLines.join(" ").replace(/\s+/g," ").trim();
-    actualNotes=actualLines.join(" ").replace(/\s+/g," ").trim();
-    break;
+    extractedNotes=noteLines.join(" ").replace(/^Notes\s*:\s*/i,"").trim();
   }
-  if(!extractedNotes && !(state.pdfLayout||[]).length){
-    const noteLine=lines.find(x=>/^Notes\s*:/i.test(x));
-    extractedNotes=noteLine?noteLine.trim():"";
-    actualNotes=noteLine?noteLine.replace(/^Notes\s*:\s*/i,"").trim():"";
+  // STAMP phrases may be highlighted outside the Notes block in Odessa SO PDFs.
+  // Keep the full Notes text, while also preserving any recognized stamp instruction
+  // found anywhere in the extracted PDF text (same behavior as the prior version).
+  const recognizedStampPhrase=[
+    "PLEASE GET STAMPED",
+    "GET STAMP!",
+    "GET THE STAMP!",
+    "PLEASE PROVIDE AFE & GL ACCOUNT"
+  ].find(phrase=>t.toUpperCase().includes(phrase));
+  if(recognizedStampPhrase && !extractedNotes.toUpperCase().includes(recognizedStampPhrase)){
+    extractedNotes=(extractedNotes+" "+recognizedStampPhrase).trim();
   }
-  state.actualNotes=actualNotes;
   setValue("notes",extractedNotes);
 
   // Totals in Odessa PDFs can be stacked vertically:
@@ -827,7 +802,7 @@ function getData(){
     soldToWell:$("soldToWell").value.trim(), shipToWell:$("shipToWell").value.trim(),
     contact:$("contact").value.trim(), phone:$("phone").value.trim(),
     date:$("deliveryDate").value, time:$("deliveryTime").value,
-    deliveryText:$("deliveryText").value.trim(), shippingMethod:state.shippingMethod||"", salesPerson:state.salesPerson||"", notes:$("notes").value.trim(), actualNotes:state.actualNotes||"",
+    deliveryText:$("deliveryText").value.trim(), shippingMethod:state.shippingMethod||"", salesPerson:state.salesPerson||"", notes:$("notes").value.trim(),
     subtotal:Number($("subtotal").value||0), tax:Number($("tax").value||0), total:Number($("total").value||0), items
   };
 }
@@ -850,8 +825,6 @@ function runAudit(){
   const d=getData(), r=[], suggestions=[];
   const c=customerKey(d.customer);
   const notesNormalized=normalize(d.notes);
-  const actualNotesNormalized=normalize(d.actualNotes||d.notes);
-  const inspectionNotesNormalized=actualNotesNormalized;
 
   addResult(r,"TAXES / STAMP / DISCOUNT / EXTRA INFO",true,"Initial review completed. Specific checks are listed below.");
   const sold=customerKey(d.soldTo), ship=customerKey(d.shipTo);
@@ -879,7 +852,7 @@ function runAudit(){
   const fieldServicePickup=pickupChargeItems.length>0;
   // Notes may explicitly confirm that the customer picked up the order at OSI.
   // In that case, a missing outbound Delivery Charge is valid.
-  const pickedUpFromOSI=/\bPICKED\s+UP\s+FROM\s+OSI\b/.test(actualNotesNormalized);
+  const pickedUpFromOSI=/\bPICKED\s+UP\s+FROM\s+OSI\b/.test(notesNormalized);
   const deliveryItemAmount=deliveryItems.reduce((sum,x)=>sum+(Number(x.amount)||Number(x.price||0)*Number(x.qty||1)),0);
   const deliveryPriceMatch=
     deliveryText.includes("AFTER HOURS") ? RULES.afterHoursDelivery :
@@ -938,7 +911,7 @@ function runAudit(){
   // inventory and refurbishment-related orders.
   const inspectionNoteKeywords=["FROM CONSIGNMENT","INVENTORY","REFURBISHMENT","REFURBISH","COI","REFURB"];
   const inspectionNoteMatches=inspectionNoteKeywords.filter(keyword=>
-    new RegExp("\\b"+keyword+"\\b").test(inspectionNotesNormalized)
+    new RegExp("\\b"+keyword+"\\b").test(notesNormalized)
   );
   const inspectionNoteTrigger=inspectionNoteMatches.length>0;
   const hasInspection=d.items.some(x=>
@@ -959,8 +932,8 @@ function runAudit(){
   let priceErrors=[], specialPNs=[], reinstalledZeroItems=[];
   d.items.forEach(x=>{
     const lp=state.priceList.get(normalize(x.pn));
-    const pnInNotes=actualNotesNormalized.includes(normalize(x.pn));
-    const reinstalledMention=/\b(REINSTALLED|REINSTALL|REUSED|RE-USED|REUTILIZED|REUTILIZADO|REINSTALADO|REINSTALADA)\b/.test(actualNotesNormalized);
+    const pnInNotes=notesNormalized.includes(normalize(x.pn));
+    const reinstalledMention=/\b(REINSTALLED|REINSTALL|REUSED|RE-USED|REUTILIZED|REUTILIZADO|REINSTALADO|REINSTALADA)\b/.test(notesNormalized);
     const justifiedZero=Number(x.price)===0 && pnInNotes && reinstalledMention;
     // REV021: ESP Vortex Desander sold to Permian Resources has a fixed
     // special unit price of $3,333, overriding the standard Price List.
@@ -1017,7 +990,7 @@ function runAudit(){
   addResult(r,"TAX Calculation",taxOK,taxDetail);
 
   const stampRequired=procedureReady ? procedureHas(d.customer,state.procedureRules.stamp) : false;
-  const stampSource=d.notes||"";\n  const stampOK=procedureReady ? (!stampRequired || hasPhrase(stampSource,["PLEASE GET STAMPED","GET STAMP!","GET THE STAMP!","PLEASE PROVIDE AFE & GL ACCOUNT"])) : false;
+  const stampOK=procedureReady ? (!stampRequired || hasPhrase(d.notes,["PLEASE GET STAMPED","GET STAMP!","GET THE STAMP!","PLEASE PROVIDE AFE & GL ACCOUNT"])) : false;
   addResult(r,"STAMP phrase",stampOK,
     procedureReady
       ? (stampRequired ? `Procedure: ${state.procedureRules.version} requires STAMP; the Sales Order Notes must contain a STAMP phrase. If the rule comes from EXXON MOBIL, it applies to XTO based on the note “ALL EXXON ORDERS WILL BE XTO”.` : "The company is not listed under STAMP in the Procedure.")
@@ -1087,7 +1060,7 @@ function runAudit(){
       screwCount?"The Notes section includes the screw quantity.":"REV021: specify the required number of screws in Notes for the Safety Shear Joint.","warning");
   }
 
-  if(/CONSIGNMENT/.test(actualNotesNormalized)){
+  if(/CONSIGNMENT/.test(notesNormalized)){
     const zeroValue=Math.abs(d.total)<0.01;
     addResult(r,"Consignment — Sales Order value",zeroValue,
       zeroValue?"Consignment order with a total value of $0.00.":"REV021: consignment orders must have a Sales Order total of $0.00.");
@@ -1169,7 +1142,7 @@ function runAudit(){
   }
 
   const cardFee=d.items.find(x=>x.pn==="1002-0002-00");
-  if(/CREDIT CARD|CREDIT CARD PAYMENT|PAYMENT AT THE OFFICE/.test(actualNotesNormalized)||cardFee){
+  if(/CREDIT CARD|CREDIT CARD PAYMENT|PAYMENT AT THE OFFICE/.test(notesNormalized)||cardFee){
     const feeActual=cardFee?cardFee.price*cardFee.qty:0;
     const baseValue=Math.max(0,d.subtotal-feeActual);
     const feeExpected=Math.round(baseValue*0.0375*100)/100;
@@ -1210,7 +1183,6 @@ function loadDraft(){
       return;
     }
     ["soNumber","customer","soldTo","shipTo","soldToWell","shipToWell","contact","phone","deliveryDate","deliveryTime","deliveryText","notes","subtotal","tax","total"].forEach(k=>setValue(k,d[k]));
-    state.actualNotes=d.actualNotes||"";
     $("itemsBody").innerHTML=""; (d.items||[]).forEach(x=>addItem(x.pn,x.desc,x.qty,x.price,x.discount||0));
     $("status").textContent="Local draft loaded successfully.";
     $("status").className="status ok";
