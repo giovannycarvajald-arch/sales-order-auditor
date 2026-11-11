@@ -437,9 +437,11 @@ function parseSO(text){
   const stopSection=/^(?:RETURN\s+POLICY|SUBTOTAL|TAX|TOTAL|SIGN(?:\s+DATE)?|DELIVERY\s+TICKET|SHIPPING\s+METHOD|CUSTOMER\s+P\.?O\.?|INVENTORY\s+LOCATION|LN\s*#|DESCRIPTION|QUANTITY|UNIT\s+PRICE|DISC%|AMOUNT)\b/i;
   for(const page of state.pdfLayout||[]){
     const rows=page.rows;
-    const notesIndex=rows.findIndex(row=>row.items.some(it=>/^\s*NOTES\s*:/i.test(it.text.trim())));
+    const notesIndex=rows.findIndex(row=>/^\s*NOTES\s*:/i.test(row.text.trim()) || row.items.some(it=>/^\s*NOTES\s*:/i.test(it.text.trim())));
     if(notesIndex<0) continue;
-    let startIndex=rows.findIndex(row=>row.items.some(it=>/^\s*SALES\s*PERSON\s*:/i.test(it.text.trim())));
+    // PDF.js may split the bold "Sales person:" label into multiple text
+    // fragments, so detect it from the reconstructed row text as well.
+    let startIndex=rows.findIndex(row=>/^\s*SALES\s*PERSON\s*:/i.test(row.text.trim()) || row.items.some(it=>/^\s*SALES\s*PERSON\s*:/i.test(it.text.trim())));
     if(startIndex<0) startIndex=notesIndex;
     const visibleLines=[];
     const actualLines=[];
@@ -1015,7 +1017,7 @@ function runAudit(){
   addResult(r,"TAX Calculation",taxOK,taxDetail);
 
   const stampRequired=procedureReady ? procedureHas(d.customer,state.procedureRules.stamp) : false;
-  const stampOK=procedureReady ? (!stampRequired || hasPhrase(d.notes,["PLEASE GET STAMPED","GET STAMP!","GET THE STAMP!","PLEASE PROVIDE AFE & GL ACCOUNT"])) : false;
+  const stampSource=d.notes||"";\n  const stampOK=procedureReady ? (!stampRequired || hasPhrase(stampSource,["PLEASE GET STAMPED","GET STAMP!","GET THE STAMP!","PLEASE PROVIDE AFE & GL ACCOUNT"])) : false;
   addResult(r,"STAMP phrase",stampOK,
     procedureReady
       ? (stampRequired ? `Procedure: ${state.procedureRules.version} requires STAMP; the Sales Order Notes must contain a STAMP phrase. If the rule comes from EXXON MOBIL, it applies to XTO based on the note “ALL EXXON ORDERS WILL BE XTO”.` : "The company is not listed under STAMP in the Procedure.")
