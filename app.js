@@ -909,7 +909,9 @@ function runAudit(){
   const hasTrigger=d.items.some(x=>x.pn==="1014-0142-00");
   // Notes references that require an Inspection Fee for consignment,
   // inventory and refurbishment-related orders.
-  const inspectionNoteTrigger=/\b(FROM CONSIGNMENT|INVENTORY|REFURBISHMENT|REFURBISH|COI|REFURB)\b/.test(notesNormalized);
+  const inspectionNoteKeywords=["FROM CONSIGNMENT","INVENTORY","REFURBISHMENT","REFURBISH","COI","REFURB"];
+  const inspectionNoteMatches=inspectionNoteKeywords.filter(keyword=>
+    new RegExp("\\b"+keyword.replace(/[.*+?^${}()|[\\]\\\\]/g,"\\\\  const inspectionNoteTrigger=/\b(FROM CONSIGNMENT|INVENTORY|REFURBISHMENT|REFURBISH|COI|REFURB)\b/.test(notesNormalized);
   const hasInspection=d.items.some(x=>
     x.pn==="1004-0009-00" || /INSPECTION\s+FEE/.test(normalize(x.desc))
   );
@@ -917,6 +919,16 @@ function runAudit(){
   const inspectionReasons=[
     hasTrigger?"PN 1014-0142-00":null,
     inspectionNoteTrigger?"referencia en Notes (consignment / inventory / refurbishment / COI)":null
+  ].filter(Boolean);")+"\\b").test(notesNormalized)
+  );
+  const inspectionNoteTrigger=inspectionNoteMatches.length>0;
+  const hasInspection=d.items.some(x=>
+    x.pn==="1004-0009-00" || /INSPECTION\\s+FEE/.test(normalize(x.desc))
+  );
+  const inspectionRequired=hasTrigger||inspectionNoteTrigger;
+  const inspectionReasons=[
+    hasTrigger?"PN 1014-0142-00":null,
+    inspectionNoteTrigger?"Notes keyword(s) detected: "+inspectionNoteMatches.join(", "):null
   ].filter(Boolean);
   addResult(r,"Inspection Fee",!inspectionRequired||hasInspection,
     inspectionRequired&&!hasInspection
