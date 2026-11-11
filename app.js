@@ -428,28 +428,42 @@ function parseSO(text){
     if(!currentDeliveryText) setValue("deliveryText", `${sourceLabel}: ${date}${time ? ` ${time}` : ""}`);
   }
 
-  // Preserve the complete Notes section for documented zero-charge/reinstalled items.
-  const notesIdx=lines.findIndex(x=>/^Notes\s*:/i.test(x));
+  // Extract only the actual Notes block using PDF page coordinates.
+  // Do not let nearby headers, table columns, return-policy text, or page 2
+  // content leak into Notes and accidentally trigger keyword-based rules.
   let extractedNotes="";
-  if(notesIdx>=0){
-    const noteLines=[];
-    for(let i=notesIdx;i<lines.length;i++){
-      if(i>notesIdx && /^(?:Subtotal|Tax|Total|Sign|Date)\s*$/i.test(lines[i])) break;
-      noteLines.push(lines[i]);
+  const notesStop=/^(?:RETURN\s+POLICY|SUBTOTAL|TAX|TOTAL|SIGN(?:\s+DATE)?|DELIVERY\s+TICKET|SHIPPING\s+METHOD|CUSTOMER\s+P\.?O\.?|INVENTORY\s+LOCATION|LN\s*#|DESCRIPTION|QUANTITY|UNIT\s+PRICE|DISC%|AMOUNT)\b/i;
+  for(const page of state.pdfLayout||[]){
+    const noteRowIndex=page.rows.findIndex(row=>
+      row.items.some(it=>/^\s*NOTES\s*:/i.test(it.text.trim()))
+    );
+    if(noteRowIndex<0) continue;
+    const noteRow=page.rows[noteRowIndex];
+    const labelItem=noteRow.items.find(it=>/^\s*NOTES\s*:/i.test(it.text.trim()));
+    const labelX=labelItem?.x??0;
+    const initial=noteRow.items
+      .filter(it=>it.x>=labelX-2)
+      .sort((a,b)=>a.x-b.x)
+      .map(it=>it.text.replace(/^\s*NOTES\s*:\s*/i,""))
+      .filter(Boolean).join(" ").trim();
+    const collected=[];
+    if(initial) collected.push(initial);
+    for(let i=noteRowIndex+1;i<page.rows.length;i++){
+      const row=page.rows[i];
+      const rowText=row.text.replace(/\s+/g," ").trim();
+      if(!rowText) continue;
+      if(notesStop.test(rowText)) break;
+      if(/^(?:SOLD\s+TO|SHIP\s+TO|CUSTOMER\s+P\.?O\.?|INVENTORY\s+LOCATION|DELIVERY\s+TICKET|SHIPPING\s+METHOD)\s*:/i.test(rowText)) break;
+      collected.push(rowText);
     }
-    extractedNotes=noteLines.join(" ").replace(/^Notes\s*:\s*/i,"").trim();
+    extractedNotes=collected.join(" ").replace(/\s+/g," ").trim();
+    break;
   }
-  // STAMP phrases may be highlighted outside the Notes block in Odessa SO PDFs.
-  // Keep the full Notes text, while also preserving any recognized stamp instruction
-  // found anywhere in the extracted PDF text (same behavior as the prior version).
-  const recognizedStampPhrase=[
-    "PLEASE GET STAMPED",
-    "GET STAMP!",
-    "GET THE STAMP!",
-    "PLEASE PROVIDE AFE & GL ACCOUNT"
-  ].find(phrase=>t.toUpperCase().includes(phrase));
-  if(recognizedStampPhrase && !extractedNotes.toUpperCase().includes(recognizedStampPhrase)){
-    extractedNotes=(extractedNotes+" "+recognizedStampPhrase).trim();
+  // Fallback only when coordinate layout is unavailable; never absorb the
+  // remainder of the flattened PDF text after the Notes label.
+  if(!extractedNotes && !(state.pdfLayout||[]).length){
+    const noteLine=lines.find(x=>/^Notes\s*:/i.test(x));
+    extractedNotes=noteLine?noteLine.replace(/^Notes\s*:\s*/i,"").trim():"";
   }
   setValue("notes",extractedNotes);
 
@@ -825,6 +839,7 @@ function runAudit(){
   const d=getData(), r=[], suggestions=[];
   const c=customerKey(d.customer);
   const notesNormalized=normalize(d.notes);
+  const inspectionNotesNormalized=notesNormalized;
 
   addResult(r,"TAXES / STAMP / DISCOUNT / EXTRA INFO",true,"Initial review completed. Specific checks are listed below.");
   const sold=customerKey(d.soldTo), ship=customerKey(d.shipTo);
@@ -911,7 +926,7 @@ function runAudit(){
   // inventory and refurbishment-related orders.
   const inspectionNoteKeywords=["FROM CONSIGNMENT","INVENTORY","REFURBISHMENT","REFURBISH","COI","REFURB"];
   const inspectionNoteMatches=inspectionNoteKeywords.filter(keyword=>
-    new RegExp("\\b"+keyword+"\\b").test(notesNormalized)
+    new RegExp("\\b"+keyword+"\\b").test(inspectionNotesNormalized)
   );
   const inspectionNoteTrigger=inspectionNoteMatches.length>0;
   const hasInspection=d.items.some(x=>
