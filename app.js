@@ -955,7 +955,7 @@ function runAudit(){
   }
   if(reinstalledZeroItems.length){
     addResult(r,"Reused / reinstalled tool",true,
-      "$0.00 price accepted because the Sales Order notes identify the same part number as REINSTALLED/REUSED. Verify that the tool was reinstalled and that a new unit should not be charged. Part number: "+reinstalledZeroItems.map(x=>x.pn+" (precio de lista "+money(x.listPrice)+")").join(" | "),"warning");
+      "$0.00 price accepted because the Sales Order notes identify the same part number as REINSTALLED/REUSED. Verify that the tool was reinstalled and that a new unit should not be charged. Part number: "+reinstalledZeroItems.map(x=>x.pn+" (Price List price "+money(x.listPrice)+")").join(" | "),"warning");
   }
   if(!priceListReady) suggestions.push("Upload your OSI LIST PRICE to enable price verification.");
 
@@ -1029,7 +1029,7 @@ function runAudit(){
     const signOK=hasPhrase(d.notes,["MUST GET COMPANY MAN SIGN"]);
     const taxExempt=Math.abs(d.tax)<0.01;
     addResult(r,"Valence — firma and tax exempt",signOK&&taxExempt,
-      `REV021 requires la nota “MUST GET COMPANY MAN SIGN” and tratamiento Tax Exempt. Nota: ${signOK?"present":"MISSING"}; Tax: ${money(d.tax)}.`);
+      `REV021 requires the note “MUST GET COMPANY MAN SIGN” and Tax Exempt treatment. Note: ${signOK?"present":"MISSING"}; Tax: ${money(d.tax)}.`);
   }
 
   if(hasDesc(/SLOTTED GAS SHIELD/)){
@@ -1102,7 +1102,7 @@ function runAudit(){
   if(hasDesc(/PMM/)){
     const sixScrews=/\b6\s+SCREWS?\b/i.test(d.notes);
     const pressure=/\b4500\s*PSI\b/i.test(d.notes);
-    addResult(r,"PMM — configuración",true,
+    addResult(r,"PMM — configuration",true,
       sixScrews&&pressure?"Notes specify 6 screws and 4,500 psi.":
       "REV021: verify that PMM has 6 screws, a 4,500 psi set pressure, and a tag showing the pressure and well name.","warning");
   }
@@ -1117,7 +1117,7 @@ function runAudit(){
   }
 
   if(/OXY/.test(normalize(d.customer))){
-    addResult(r,"OXY — entidad del pozo",true,
+    addResult(r,"OXY — well entity",true,
       "REV021: check DrillingEdge to determine whether the well belongs to OXY NM or OXY USA; these are separate entities with different tax treatments.","warning");
   }
 
