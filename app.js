@@ -611,9 +611,19 @@ function loadPriceList(e){
   reader.readAsArrayBuffer(file);
 }
 
+function readLocalJSON(key){
+  try{
+    const raw=localStorage.getItem(key);
+    return raw?JSON.parse(raw):null;
+  }catch(err){
+    console.warn("Ignoring invalid local metadata:",key,err);
+    return null;
+  }
+}
+
 function renderConfigurationStatus(){
-  const priceMeta=JSON.parse(localStorage.getItem("soPriceListMeta_v2")||"null");
-  const procedureMeta=JSON.parse(localStorage.getItem("soaProcedureMeta_v2")||"null");
+  const priceMeta=readLocalJSON("soPriceListMeta_v2");
+  const procedureMeta=readLocalJSON("soaProcedureMeta_v2");
   const priceReady=state.priceList instanceof Map && state.priceList.size>0;
   const procedureReady=!!state.procedureRules;
   const complete=priceReady && procedureReady;
@@ -636,7 +646,7 @@ function restorePriceList(){
       : "No Price List has been uploaded yet.";
     $("priceListStatus").className=state.priceList.size?"status ok":"status";
     renderConfigurationStatus();
-  }catch{ state.priceList=new Map(); $("priceListStatus").textContent="No Price List has been uploaded yet."; renderConfigurationStatus(); }
+  }catch(err){ state.priceList=new Map(); $("priceListStatus").textContent="Price List data could not be restored. Please upload the Excel file again."; $("priceListStatus").className="status bad"; renderConfigurationStatus(); }
 }
 
 function cleanProcedureName(s){
@@ -801,7 +811,7 @@ function restoreProcedure(){
       renderConfigurationStatus();
       return;
     }
-  }catch{}
+  }catch(err){ console.warn("Could not restore saved Procedure:",err); state.procedureRules=null; }
   $("procedureStatus").textContent="Upload the Sales Order Procedure to enable dynamic rules.";
   $("procedureStatus").className="status";
   renderConfigurationStatus();
