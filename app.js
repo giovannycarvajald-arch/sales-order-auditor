@@ -824,6 +824,7 @@ function hasPhrase(text, phrases){ const n=normalize(text); return phrases.some(
 function runAudit(){
   const d=getData(), r=[], suggestions=[];
   const c=customerKey(d.customer);
+  const notesNormalized=normalize(d.notes);
 
   addResult(r,"TAXES / STAMP / DISCOUNT / EXTRA INFO",true,"Initial review completed. Specific checks are listed below.");
   const sold=customerKey(d.soldTo), ship=customerKey(d.shipTo);
@@ -902,9 +903,9 @@ function runAudit(){
   const hasTrigger=d.items.some(x=>x.pn==="1014-0142-00");
   // Notes references that require an Inspection Fee for consignment,
   // inventory and refurbishment-related orders.
-  const inspectionNoteTrigger=/\\b(FROM CONSIGNMENT|INVENTORY|REFURBISHMENT|REFURBISH|COI|REFURB)\\b/.test(notesNormalized);
+  const inspectionNoteTrigger=/\b(FROM CONSIGNMENT|INVENTORY|REFURBISHMENT|REFURBISH|COI|REFURB)\b/.test(notesNormalized);
   const hasInspection=d.items.some(x=>
-    x.pn==="1004-0009-00" || /INSPECTION\\s+FEE/.test(normalize(x.desc))
+    x.pn==="1004-0009-00" || /INSPECTION\s+FEE/.test(normalize(x.desc))
   );
   const inspectionRequired=hasTrigger||inspectionNoteTrigger;
   const inspectionReasons=[
@@ -919,7 +920,6 @@ function runAudit(){
         :"No condition requiring an Inspection Fee was found.");
 
   let priceErrors=[], specialPNs=[], reinstalledZeroItems=[];
-  const notesNormalized=normalize(d.notes);
   d.items.forEach(x=>{
     const lp=state.priceList.get(normalize(x.pn));
     const pnInNotes=notesNormalized.includes(normalize(x.pn));
@@ -950,7 +950,7 @@ function runAudit(){
       : "ERROR: Price List not uploaded; prices cannot be checked against Excel.");
   if(specialPNs.length){
     const uniqueSpecialPNs=[...new Set(specialPNs)];
-    addResult(r,"PN especiales not founds",true,
+    addResult(r,"Special part numbers not found",true,
       `The following part numbers are not listed in the Price List: ${uniqueSpecialPNs.join(", ")}. Confirm the name/description and price directly with the salesperson before processing the order.`,"warning");
   }
   if(reinstalledZeroItems.length){
@@ -981,7 +981,7 @@ function runAudit(){
 
   const stampRequired=procedureReady ? procedureHas(d.customer,state.procedureRules.stamp) : false;
   const stampOK=procedureReady ? (!stampRequired || hasPhrase(d.notes,["PLEASE GET STAMPED","GET STAMP!","GET THE STAMP!","PLEASE PROVIDE AFE & GL ACCOUNT"])) : false;
-  addResult(r,"Frase STAMP",stampOK,
+  addResult(r,"STAMP phrase",stampOK,
     procedureReady
       ? (stampRequired ? `Procedure: ${state.procedureRules.version} requires STAMP; the Sales Order Notes must contain a STAMP phrase. If the rule comes from EXXON MOBIL, it applies to XTO based on the note “ALL EXXON ORDERS WILL BE XTO”.` : "The company is not listed under STAMP in the Procedure.")
       : "ERROR: upload the current Sales Order Procedure before approving the Sales Order.");
@@ -1028,7 +1028,7 @@ function runAudit(){
   if(/VALENCE OPERATING/.test(normalize(d.customer))){
     const signOK=hasPhrase(d.notes,["MUST GET COMPANY MAN SIGN"]);
     const taxExempt=Math.abs(d.tax)<0.01;
-    addResult(r,"Valence — firma and tax exempt",signOK&&taxExempt,
+    addResult(r,"Valence — signature and Tax Exempt",signOK&&taxExempt,
       `REV021 requires the note “MUST GET COMPANY MAN SIGN” and Tax Exempt treatment. Note: ${signOK?"present":"MISSING"}; Tax: ${money(d.tax)}.`);
   }
 
@@ -1040,7 +1040,7 @@ function runAudit(){
 
   if(hasDesc(/G[- ]?FORCE PACKERLESS/)){
     const companion=hasDesc(/OAL SPACER SUB|PUP JOINT/);
-    addResult(r,"G-Force Packerless — accesorio",companion,
+    addResult(r,"G-Force Packerless — accessory",companion,
       companion?"OAL Spacer Sub o Pup Joint incluido.":"REV021: agregar un OAL Spacer Sub o un Pup Joint al G-Force Packerless.");
   }
 
@@ -1053,7 +1053,7 @@ function runAudit(){
   if(/CONSIGNMENT/.test(notesNormalized)){
     const zeroValue=Math.abs(d.total)<0.01;
     addResult(r,"Consignment — Sales Order value",zeroValue,
-      zeroValue?"Consignment order con valor total $0.00.":"REV021: consignment orders must have a Sales Order total of $0.00.");
+      zeroValue?"Consignment order with a total value of $0.00.":"REV021: consignment orders must have a Sales Order total of $0.00.");
   }
 
   if((/OXY|PERMIAN RESOURCES|COTERRA|APACHE/.test(normalize(d.customer))) &&
@@ -1153,7 +1153,7 @@ function runAudit(){
   if(!procedureReady) suggestions.push("Upload Sales Order Procedure REV021 or a later revision to enable dynamic TAXABLE/STAMP/DISCOUNT rules.");
 
   const errors=r.filter(x=>!x.ok);
-  $("resultBanner").textContent=errors.length?`🔴 NOT APPROVED — ${errors.length} error(s)`:"🟢 APPROVED — 0 errores";
+  $("resultBanner").textContent=errors.length?`🔴 NOT APPROVED — ${errors.length} error(s)`:"🟢 APPROVED — 0 errors";
   $("resultBanner").className="result "+(errors.length?"bad":"ok");
   $("results").innerHTML=r.map(x=>`<div class="audit-row"><div class="name">${x.name}</div><div>${escapeHtml(x.detail)}</div><div class="${x.kind==='warning'?'obs':(x.ok?'pass':'fail')}">${x.kind==='warning'?'⚠ REVIEW':(x.ok?'✓ OK':'✕ ERROR')}</div></div>`).join("");
   $("suggestions").innerHTML=suggestions.length?`<div class="suggestions"><strong>Corrections / notes</strong><ul>${suggestions.map(x=>`<li>${escapeHtml(x)}</li>`).join("")}</ul></div>`:"";
