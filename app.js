@@ -1208,6 +1208,7 @@ function loadDraft(){
       return;
     }
     ["soNumber","customer","soldTo","shipTo","soldToWell","shipToWell","contact","phone","deliveryDate","deliveryTime","deliveryText","notes","subtotal","tax","total"].forEach(k=>setValue(k,d[k]));
+    state.actualNotes=d.actualNotes||"";
     $("itemsBody").innerHTML=""; (d.items||[]).forEach(x=>addItem(x.pn,x.desc,x.qty,x.price,x.discount||0));
     $("status").textContent="Local draft loaded successfully.";
     $("status").className="status ok";
