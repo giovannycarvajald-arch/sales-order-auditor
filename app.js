@@ -900,8 +900,23 @@ function runAudit(){
   addResult(r,"Delivery Charge",delOK,deliveryDetail,deliveryKind);
 
   const hasTrigger=d.items.some(x=>x.pn==="1014-0142-00");
-  const hasInspection=d.items.some(x=>x.pn==="1004-0009-00");
-  addResult(r,"Inspection Fee",!hasTrigger||hasInspection,hasTrigger&&!hasInspection?"ERROR: 1014-0142-00 requiere 1004-0009-00 Inspection Fee.":"Correcto.");
+  // Notes references that require an Inspection Fee for consignment,
+  // inventory and refurbishment-related orders.
+  const inspectionNoteTrigger=/\\b(FROM CONSIGNMENT|INVENTORY|REFURBISHMENT|REFURBISH|COI|REFURB)\\b/.test(notesNormalized);
+  const hasInspection=d.items.some(x=>
+    x.pn==="1004-0009-00" || /INSPECTION\\s+FEE/.test(normalize(x.desc))
+  );
+  const inspectionRequired=hasTrigger||inspectionNoteTrigger;
+  const inspectionReasons=[
+    hasTrigger?"PN 1014-0142-00":null,
+    inspectionNoteTrigger?"referencia en Notes (consignment / inventory / refurbishment / COI)":null
+  ].filter(Boolean);
+  addResult(r,"Inspection Fee",!inspectionRequired||hasInspection,
+    inspectionRequired&&!hasInspection
+      ?"ERROR: se requiere INSPECTION FEE porque "+inspectionReasons.join(" y ")+", pero no se encontró el cargo en la SO."
+      :inspectionRequired
+        ?"Inspection Fee encontrado. Regla activada por "+inspectionReasons.join(" y ")+"."
+        :"No se encontró una condición que requiera Inspection Fee.");
 
   let priceErrors=[], specialPNs=[], reinstalledZeroItems=[];
   const notesNormalized=normalize(d.notes);
