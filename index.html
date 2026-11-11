@@ -12,7 +12,7 @@
   <header class="topbar">
     <div>
       <h1>Sales Order Auditor</h1>
-      <p>Odessa Separator Inc. · Auditoría local con reglas del Procedure</p>
+      <p>Odessa Separator Inc. · Local auditing based on Procedure rules</p>
     </div>
     <div class="privacy-badge">🔒 Local data</div>
   </header>
@@ -20,17 +20,17 @@
   <main class="container">
     <section id="configurationStatus" class="config-status incomplete" aria-live="polite"></section>
     <section class="card hero">
-      <h2>1. Cargar Sales Order</h2>
-      <p>El PDF se procesa en tu navegador. No se envía a un servidor para la auditoría.</p>
+      <h2>1. Upload Sales Order</h2>
+      <p>The PDF is processed in your browser. It is not sent to a server for auditing.</p>
       <label class="dropzone" id="dropzone">
         <input id="pdfInput" type="file" accept="application/pdf">
         <span class="drop-icon">📄</span>
-        <strong>Arrastra el PDF aquí</strong>
-        <span>o haz clic para seleccionarlo</span>
+        <strong>Drag the PDF here</strong>
+        <span>or click to browse</span>
       </label>
       <div class="file-row">
         <span id="fileName">Ningún PDF seleccionado</span>
-        <button id="analyzeBtn" class="primary" disabled>🔍 Analizar SO</button>
+        <button id="analyzeBtn" class="primary" disabled>🔍 Analyze SO</button>
       </div>
       <div id="status" class="status"></div>
     </section>
@@ -38,10 +38,10 @@
     <section class="card">
       <div class="section-title">
         <div>
-          <h2>2. Datos extraídos</h2>
-          <p>Puedes corregir un campo si el PDF no lo leyó correctamente.</p>
+          <h2>2. Extracted Data</h2>
+          <p>You can correct any field that was not read correctly from the PDF.</p>
         </div>
-        <div class="draft-actions"><button id="loadDraftBtn" class="secondary">Cargar borrador</button><button id="saveDraftBtn" class="secondary">Guardar borrador local</button></div>
+        <div class="draft-actions"><button id="loadDraftBtn" class="secondary">Load Draft</button><button id="saveDraftBtn" class="secondary">Save Draft Locally</button></div>
       </div>
       <div class="fields">
         <label>SO Number<input id="soNumber"></label>
@@ -62,10 +62,10 @@
     <section class="card">
       <div class="section-title">
         <div>
-          <h2>3. Ítems y totales</h2>
-          <p>Los precios se comparan contra la Price List cargada localmente.</p>
+          <h2>3. Line Items & Totals</h2>
+          <p>Prices are compared against the locally uploaded Price List.</p>
         </div>
-        <button id="addItemBtn" class="secondary">＋ Agregar ítem</button>
+        <button id="addItemBtn" class="secondary">＋ Add Item</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -86,21 +86,21 @@
       <div class="section-title">
         <div>
           <h2>4. Sales Order Procedure</h2>
-          <p>Carga el PDF del procedure vigente. La aplicación extrae automáticamente las listas TAXABLE, STAMP y DISCOUNT de la sección de la página 17 y las guarda localmente.</p>
+          <p>Upload the current Procedure PDF. The app automatically extracts the TAXABLE, STAMP, and DISCOUNT lists from the section on page 17 and stores them locally.</p>
         </div>
-        <label class="file-button">📘 Cargar Procedure<input id="procedureInput" type="file" accept="application/pdf"></label>
+        <label class="file-button">📘 Upload Procedure<input id="procedureInput" type="file" accept="application/pdf"></label>
       </div>
       <div id="procedureStatus" class="status"></div>
-      <div class="small" style="margin-top:8px;">La última versión cargada queda guardada en este navegador y se puede reemplazar cargando un nuevo procedure.</div>
+      <div class="small" style="margin-top:8px;">The latest uploaded version is saved in this browser and can be replaced by uploading a new Procedure.</div>
     </section>
 
     <section class="card">
       <div class="section-title">
         <div>
           <h2>5. Price List</h2>
-          <p>Carga el Excel de OSI. Se guarda únicamente en este navegador.</p>
+          <p>Upload the OSI Excel file. It is stored only in this browser.</p>
         </div>
-        <label class="file-button">📊 Cargar Excel<input id="xlsxInput" type="file" accept=".xlsx,.xls,.csv"></label>
+        <label class="file-button">📊 Upload Excel<input id="xlsxInput" type="file" accept=".xlsx,.xls,.csv"></label>
       </div>
       <div id="priceListStatus" class="status"></div>
     </section>
@@ -108,30 +108,30 @@
     <section class="card">
       <div class="section-title">
         <div>
-          <h2>6. Resultado de auditoría</h2>
-          <p>Reglas determinísticas + reglas dinámicas del Procedure cargado.</p>
+          <h2>6. Audit Results</h2>
+          <p>Deterministic rules + dynamic rules from the uploaded Procedure.</p>
         </div>
-        <button id="auditBtn" class="primary">✅ Ejecutar auditoría</button>
+        <button id="auditBtn" class="primary">✅ Run Audit</button>
       </div>
-      <div id="resultBanner" class="result neutral">Carga una SO y ejecuta la auditoría.</div>
+      <div id="resultBanner" class="result neutral">Upload a Sales Order and run the audit.</div>
       <div id="results"></div>
       <div id="suggestions"></div>
     </section>
 
     <section class="card">
-      <h2>7. Historial local</h2>
+      <h2>7. Local History</h2>
       <div class="history-actions">
-        <button id="exportHistoryBtn" class="secondary">Exportar historial JSON</button>
-        <button id="clearHistoryBtn" class="danger">Borrar historial local</button>
+        <button id="exportHistoryBtn" class="secondary">Export JSON History</button>
+        <button id="clearHistoryBtn" class="danger">Clear Local History</button>
       </div>
       <div id="history"></div>
     </section>
   </main>
 
   <footer>
-    V3.39 · Configuración visible · Procedure REV021 · Sin backend · Sin API key · Procedure, Price List y datos de auditoría guardados localmente.
+    V3.40 · Configuration Status · Procedure REV021 · No backend · No API key · Procedure, Price List and audit data stored locally.
   </footer>
 
-  <script src="app.js?v=3.39" type="module"></script>
+  <script src="app.js?v=3.40" type="module"></script>
 </body>
 </html>
