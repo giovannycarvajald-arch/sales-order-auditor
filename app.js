@@ -909,7 +909,7 @@ function runAudit(){
   const hasTrigger=d.items.some(x=>x.pn==="1014-0142-00");
   // Notes references that require an Inspection Fee for consignment,
   // inventory and refurbishment-related orders.
-  const inspectionNoteKeywords=["FROM CONSIGNMENT","INVENTORY","REFURBISHMENT","REFURBISH","COI","REFURB"];
+  const inspectionNoteKeywords=["FROM CONSIGNMENT","REFURBISHMENT","REFURBISH","COI","REFURB"];
   const inspectionNoteMatches=inspectionNoteKeywords.filter(keyword=>
     new RegExp("\\b"+keyword+"\\b").test(notesNormalized)
   );
