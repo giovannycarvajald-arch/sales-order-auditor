@@ -911,11 +911,11 @@ function runAudit(){
   // inventory and refurbishment-related orders.
   const inspectionNoteKeywords=["FROM CONSIGNMENT","INVENTORY","REFURBISHMENT","REFURBISH","COI","REFURB"];
   const inspectionNoteMatches=inspectionNoteKeywords.filter(keyword=>
-    new RegExp("\\\\b"+keyword+"\\\\b").test(notesNormalized)
+    new RegExp("\\b"+keyword+"\\b").test(notesNormalized)
   );
   const inspectionNoteTrigger=inspectionNoteMatches.length>0;
   const hasInspection=d.items.some(x=>
-    x.pn==="1004-0009-00" || /INSPECTION\\s+FEE/.test(normalize(x.desc))
+    x.pn==="1004-0009-00" || /INSPECTION\s+FEE/.test(normalize(x.desc))
   );
   const inspectionRequired=hasTrigger||inspectionNoteTrigger;
   const inspectionReasons=[
