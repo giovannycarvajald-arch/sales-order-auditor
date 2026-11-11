@@ -594,7 +594,7 @@ function renderConfigurationStatus(){
   const complete=priceReady && procedureReady;
   const details=[];
   details.push('<div class="config-file"><span class="config-dot '+(priceReady?"ready":"missing")+'"></span><div><strong>Price List</strong><small>'+(priceReady?(escapeHtml(priceMeta?.fileName||"Excel loaded")+" · "+(priceMeta?.count||state.priceList.size).toLocaleString()+" PN"+(priceMeta?.sheetName?" · Hoja "+escapeHtml(priceMeta.sheetName):"")):"Not uploaded")+'</small></div></div>');
-  details.push('<div class="config-file"><span class="config-dot '+(procedureReady?"ready":"missing")+'"></span><div><strong>Sales Order Procedure</strong><small>'+(procedureReady?(escapeHtml(procedureMeta?.fileName||"Procedure cargado")+" · "+escapeHtml(state.procedureRules.version||"Versión no identificada")):"Not uploaded")+'</small></div></div>');
+  details.push('<div class="config-file"><span class="config-dot '+(procedureReady?"ready":"missing")+'"></span><div><strong>Sales Order Procedure</strong><small>'+(procedureReady?(escapeHtml(procedureMeta?.fileName||"Procedure uploaded")+" · "+escapeHtml(state.procedureRules.version||"Version not identified")):"Not uploaded")+'</small></div></div>');
   const box=$("configurationStatus");
   if(!box) return;
   box.className="config-status "+(complete?"complete":"incomplete");
@@ -817,8 +817,8 @@ function deliveryExpected(d){
   if(!d.date || !d.time) return {type:"UNKNOWN",price:null,reason:"Fecha/hora no disponible"};
   const dt=new Date(`${d.date}T${d.time}:00`);
   const day=dt.getDay(), mins=dt.getHours()*60+dt.getMinutes();
-  if(day===0 || day===6 || mins<480 || mins>1020) return {type:"AFTER HOURS",price:RULES.afterHoursDelivery,reason:"Fuera de horario laboral / fin de semana"};
-  return {type:"END USER",price:RULES.endUserDelivery,reason:"Lunes a viernes, 8 AM–5 PM"};
+  if(day===0 || day===6 || mins<480 || mins>1020) return {type:"AFTER HOURS",price:RULES.afterHoursDelivery,reason:"Outside business hours / weekend"};
+  return {type:"END USER",price:RULES.endUserDelivery,reason:"Monday through Friday, 8 AM–5 PM"};
 }
 function hasPhrase(text, phrases){ const n=normalize(text); return phrases.some(p=>n.includes(p)); }
 function runAudit(){
@@ -931,7 +931,7 @@ function runAudit(){
       /ESP VORTEX DESANDER/.test(normalize(x.desc));
     if(permianVortexDesander){
       if(Math.abs(Number(x.price)-3333)>0.01){
-        priceErrors.push(`${x.pn}: ESP Vortex Desander para Permian Resources debe ser $3,333.00; SO ${money(x.price)}.`);
+        priceErrors.push(`${x.pn}: ESP Vortex Desander para Permian Resources must be $3,333.00; Sales Order ${money(x.price)}.`);
       }
     }else if(justifiedZero && lp!=null){
       reinstalledZeroItems.push({pn:x.pn,listPrice:lp});
@@ -939,7 +939,7 @@ function runAudit(){
       // Special/custom part numbers may not be included in the standard OSI Price List.
       specialPNs.push(x.pn);
     }else if(Math.abs(Number(lp)-Number(x.price))>0.01){
-      priceErrors.push(`${x.pn}: SO ${money(x.price)} vs lista ${money(lp)}`);
+      priceErrors.push(`${x.pn}: Sales Order ${money(x.price)} vs. Price List ${money(lp)}`);
     }
   });
   const priceListReady=state.priceList.size>0;
@@ -951,11 +951,11 @@ function runAudit(){
   if(specialPNs.length){
     const uniqueSpecialPNs=[...new Set(specialPNs)];
     addResult(r,"PN especiales not founds",true,
-      `The following part numbers are not listed in the Price List: ${uniqueSpecialPNs.join(", ")}. Confirmar el nombre/descripción and el precio directamente con el vendedor antes de procesar la orden.`,"warning");
+      `The following part numbers are not listed in the Price List: ${uniqueSpecialPNs.join(", ")}. Confirm the name/description and price directly with the salesperson before processing the order.`,"warning");
   }
   if(reinstalledZeroItems.length){
     addResult(r,"Reused / reinstalled tool",true,
-      "Precio $0.00 aceptado porque las notas de la SO identifican el mismo PN como REINSTALLED/REUSED. Verificar que la herramienta fue reinstalada and que no corresponde cobrar una nueva unidad. PN: "+reinstalledZeroItems.map(x=>x.pn+" (precio de lista "+money(x.listPrice)+")").join(" | "),"warning");
+      "$0.00 price accepted because the Sales Order notes identify the same part number as REINSTALLED/REUSED. Verify that the tool was reinstalled and that a new unit should not be charged. Part number: "+reinstalledZeroItems.map(x=>x.pn+" (precio de lista "+money(x.listPrice)+")").join(" | "),"warning");
   }
   if(!priceListReady) suggestions.push("Upload your OSI LIST PRICE to enable price verification.");
 
@@ -995,7 +995,7 @@ function runAudit(){
         discountErrors.push(`${x.pn}: Sales Order discount ${x.discount||0}% vs. required ${discountRule.percent}%`);
     });
     addResult(r,"DISCOUNT",discountErrors.length===0,
-      discountErrors.length?discountErrors.join(" | "):`Procedure: ${d.customer} requires ${discountRule.percent}% and todos los ítems aplicables tienen ese descuento.`);
+      discountErrors.length?discountErrors.join(" | "):`Procedure: ${d.customer} requires ${discountRule.percent}% and all applicable items have that discount.`);
   }else if(procedureReady){
     addResult(r,"DISCOUNT",true,`The company ${d.customer} is not listed under DISCOUNT in the Procedure.`);
   }else{
@@ -1020,7 +1020,7 @@ function runAudit(){
     if(grsItems.length){
       const bad=grsItems.filter(x=>Math.abs((x.discount||0)-25)>0.01);
       addResult(r,"Diamondback — GRS discount",bad.length===0,
-        bad.length?bad.map(x=>`${x.pn}: descuento ${x.discount||0}% vs. required 25%.`).join(" | "):
+        bad.length?bad.map(x=>`${x.pn}: discount ${x.discount||0}% vs. required 25%.`).join(" | "):
         "REV021: Diamondback GRS equipment must have a 25% discount.");
     }
   }
@@ -1035,7 +1035,7 @@ function runAudit(){
   if(hasDesc(/SLOTTED GAS SHIELD/)){
     const dipTube=hasDesc(/DIP TUBE/);
     addResult(r,"Slotted Gas Shield — Dip Tube",dipTube,
-      dipTube?"Dip Tube incluido.":"REV021: todo Slotted Gas Shield debe incluir un Dip Tube.");
+      dipTube?"Dip Tube included.":"REV021: every Slotted Gas Shield must include a Dip Tube.");
   }
 
   if(hasDesc(/G[- ]?FORCE PACKERLESS/)){
@@ -1047,7 +1047,7 @@ function runAudit(){
   if(hasDesc(/SAFETY SHEAR JOINT/)){
     const screwCount=/\b\d+\s*(?:SCREWS?|BOLTS?)\b|\b(?:SCREWS?|BOLTS?)\s*[:#-]?\s*\d+\b/i.test(d.notes);
     addResult(r,"Safety Shear Joint — tornillos",true,
-      screwCount?"La nota incluye la cantidad de tornillos.":"REV021: indicar en Notes la cantidad de tornillos requerida para el Safety Shear Joint.","warning");
+      screwCount?"The Notes section includes the screw quantity.":"REV021: specify the required number of screws in Notes for the Safety Shear Joint.","warning");
   }
 
   if(/CONSIGNMENT/.test(notesNormalized)){
@@ -1059,7 +1059,7 @@ function runAudit(){
   if((/OXY|PERMIAN RESOURCES|COTERRA|APACHE/.test(normalize(d.customer))) &&
      hasDesc(/SAND LIFT|DESANDER/)){
     addResult(r,"Consignment — tool verification",true,
-      "REV021: verificar el Excel de consignment en sitio and cruzar la información con Field Services; si hay herramientas en consignment, completar la hoja de reinstalación correspondiente.","warning");
+      "REV021: check the on-site consignment spreadsheet and cross-reference it with Field Services; if tools are on consignment, complete the applicable reinstallation worksheet.","warning");
   }
 
   if(/FIREBIRD/.test(normalize(d.customer))){
@@ -1085,7 +1085,7 @@ function runAudit(){
       const bad=compact.filter(x=>Math.abs(x.price-5500)>0.01);
       addResult(r,"OXY / Occidental Permian — Sand Lift Compact",bad.length===0,
         bad.length?bad.map(x=>`${x.pn}: ${money(x.price)} vs. required $5,500.`).join(" | "):
-        "REV021: Sand Lift Compact debe tener precio de $5,500.");
+        "REV021: Sand Lift Compact must be priced at $5,500.");
     }
   }
 
@@ -1093,8 +1093,8 @@ function runAudit(){
      d.items.some(x=>/GRSB|GAS RELEASE SYSTEM BYPASS/.test(normalize(x.desc)))){
     const afterHoursQty=d.items.filter(x=>/AFTER HOURS DELIVERY/.test(normalize(x.desc))).reduce((sum,x)=>sum+x.qty,0);
     addResult(r,"XTO Neil — After Hours para GRSB",afterHoursQty>=2,
-      afterHoursQty>=2?"Se encontraron dos o más unidades de After Hours Delivery.":
-      `REV021: todas las órdenes XTO de Neil Johnson con GRSB requieren dos cargos After Hours Delivery. Cantidad encontrada: ${afterHoursQty}.`);
+      afterHoursQty>=2?"Two or more After Hours Delivery units were found.":
+      `REV021: all XTO orders for Neil Johnson containing GRSB require two After Hours Delivery charges. Quantity found: ${afterHoursQty}.`);
   }
 
 
@@ -1103,8 +1103,8 @@ function runAudit(){
     const sixScrews=/\b6\s+SCREWS?\b/i.test(d.notes);
     const pressure=/\b4500\s*PSI\b/i.test(d.notes);
     addResult(r,"PMM — configuración",true,
-      sixScrews&&pressure?"Notes indica 6 screws and 4,500 psi.":
-      "REV021: verificar que PMM tenga 6 screws, set pressure de 4,500 psi and etiqueta con presión and nombre del pozo.","warning");
+      sixScrews&&pressure?"Notes specify 6 screws and 4,500 psi.":
+      "REV021: verify that PMM has 6 screws, a 4,500 psi set pressure, and a tag showing the pressure and well name.","warning");
   }
 
   if(/DONOVAN SANCHEZ/.test(normalize(d.salesPerson)) &&
@@ -1118,7 +1118,7 @@ function runAudit(){
 
   if(/OXY/.test(normalize(d.customer))){
     addResult(r,"OXY — entidad del pozo",true,
-      "REV021: verificar en DrillingEdge si el pozo pertenece a OXY NM u OXY USA; son entidades distintas and tienen tratamiento fiscal diferente.","warning");
+      "REV021: check DrillingEdge to determine whether the well belongs to OXY NM or OXY USA; these are separate entities with different tax treatments.","warning");
   }
 
   if(/PERMIAN RESOURCES/.test(normalize(d.customer)) &&
@@ -1139,14 +1139,14 @@ function runAudit(){
     const feeOK=!!cardFee&&Math.abs(feeActual-feeExpected)<=0.02;
     addResult(r,"Credit card processing fee",feeOK,
       feeOK?`REV021: 3.75% fee correctly applied (${money(feeActual)}).`:
-      `REV021: se requires PN 1002-0002-00 por el 3.75% del valor de la venta. Esperado: ${money(feeExpected)}; found: ${cardFee?money(feeActual):"not found"}. Also verify that TAX is applied to the fee when the customer is taxable.`);
+      `REV021: part number 1002-0002-00 is required for 3.75% of the sales value. Expected: ${money(feeExpected)}; found: ${cardFee?money(feeActual):"not found"}. Also verify that TAX is applied to the fee when the customer is taxable.`);
   }
 
   if(procedureReady && !procedureHas(d.customer,state.procedureRules.taxable) &&
      !RULES.nonTaxableCustomers.some(x=>procedureCustomerMatch(d.customer,x)) &&
      !procedureHas(d.customer,state.procedureRules.stamp) &&
      !findProcedureDiscount(d.customer)){
-    addResult(r,"Tax status — confirmar empresa",true,
+    addResult(r,"Tax status — company confirmation",true,
       "REV021: the company is not listed under TAXABLE, STAMP, or DISCOUNT. If it is new or uncommon, confirm with the salesperson whether TAX should be applied.","warning");
   }
 
