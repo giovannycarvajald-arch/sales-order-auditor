@@ -38,6 +38,7 @@ $("dropzone").addEventListener("drop", e => {
 });
 $("analyzeBtn").onclick = analyzePDF;
 $("documentType").addEventListener("change",()=>{ const q=$("documentType").value==="quote"; const labels=document.querySelectorAll(".fields label"); if(labels[0]) labels[0].childNodes[0].textContent=q?"Quote Number":"SO Number"; if(labels[8]) labels[8].childNodes[0].textContent=q?"Quote Date":"Delivery Date"; if(labels[9]) labels[9].childNodes[0].textContent=q?"Quote Expiration":"Delivery Time"; if(labels[10]) labels[10].childNodes[0].textContent=q?"Shipping":"Delivery Text"; $("procedureHeading").textContent=q?"4. Quote Review":"4. Sales Order Procedure"; });
+$("documentType").dispatchEvent(new Event("change"));
 $("auditBtn").onclick = runAudit;
 $("addItemBtn").onclick = () => addItem();
 $("xlsxInput").onchange = loadPriceList;
@@ -861,8 +862,12 @@ function deliveryExpected(d){
 function hasPhrase(text, phrases){ const n=normalize(text); return phrases.some(p=>n.includes(p)); }
 function runQuoteReview(){
   const d=getData(), r=[], suggestions=[];
-  addResult(r,"Prices vs Excel",state.priceList.size>0,
-    state.priceList.size ? "Review line-item pricing against the uploaded Price List." : "REVIEW: Price List not uploaded; manually verify quote pricing.","warning");
+  if(state.priceList.size){
+    const priceIssues=[],unknown=[];
+    d.items.forEach(x=>{const lp=state.priceList.get(normalize(x.pn)); if(lp==null)unknown.push(x.pn); else if(Math.abs(Number(x.price)-Number(lp))>0.01)priceIssues.push(x.pn+": Quote unit price "+money(x.price)+" vs Price List "+money(lp));});
+    addResult(r,"Unit Prices vs Excel",priceIssues.length===0,priceIssues.length?priceIssues.join(" | "):"Recognized item unit prices match the uploaded Price List.");
+    if(unknown.length)addResult(r,"Special / unlisted part numbers",true,"REVIEW: not found in Price List: "+[...new Set(unknown)].join(", "),"warning");
+  }else addResult(r,"Unit Prices vs Excel",true,"REVIEW: Price List not uploaded; manually verify quote unit prices.","warning");
   const calc=d.items.reduce((sum,x)=>sum+(x.qty*x.price*(1-(x.discount||0)/100)),0);
   addResult(r,"Extended Price / Subtotal",Math.abs(calc-d.subtotal)<=0.02,
     Math.abs(calc-d.subtotal)<=0.02 ? "Line extensions and subtotal appear consistent." : "ERROR: calculated line-item sum "+money(calc)+" differs from entered subtotal "+money(d.subtotal)+".");
