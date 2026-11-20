@@ -821,8 +821,34 @@ function deliveryExpected(d){
   return {type:"END USER",price:RULES.endUserDelivery,reason:"Monday through Friday, 8 AM–5 PM"};
 }
 function hasPhrase(text, phrases){ const n=normalize(text); return phrases.some(p=>n.includes(p)); }
+function runQuoteReview(){
+  const d=getData(), r=[], suggestions=[];
+  addResult(r,"Prices vs Excel",state.priceList.size>0,
+    state.priceList.size ? "Review line-item pricing against the uploaded Price List." : "REVIEW: Price List not uploaded; manually verify quote pricing.","warning");
+  const calc=d.items.reduce((sum,x)=>sum+(x.qty*x.price*(1-(x.discount||0)/100)),0);
+  addResult(r,"Extended Price / Subtotal",Math.abs(calc-d.subtotal)<=0.02,
+    Math.abs(calc-d.subtotal)<=0.02 ? "Line extensions and subtotal appear consistent." : "ERROR: calculated line-item sum "+money(calc)+" differs from entered subtotal "+money(d.subtotal)+".");
+  addResult(r,"Tax",true,"REVIEW: verify tax treatment for this customer and quote.");
+  addResult(r,"Total",Math.abs(d.subtotal+d.tax-d.total)<=0.02,
+    Math.abs(d.subtotal+d.tax-d.total)<=0.02 ? "Subtotal plus tax matches total." : "ERROR: subtotal plus tax does not match total.");
+  const sold=normalize(d.soldTo), ship=normalize(d.shipTo);
+  const strip=s=>normalize(s).replace(/[.,&]/g," ").replace(/\\b(?:LLC|INC|INCORPORATED|CORP|CORPORATION|CO|COMPANY|LTD|LIMITED|LP|LLP|PLC)\\b/g," ").replace(/\\s+/g," ").trim();
+  addResult(r,"Quote To vs Ship To",!sold||!ship||strip(sold)===strip(ship),
+    !sold||!ship||strip(sold)===strip(ship)?"Company names match or are not both present.":"ERROR: Quote To and Ship To appear to be different companies.");
+  addResult(r,"Quote Expiration",true,d.date?"REVIEW: confirm quote expiration date/validity.":"REVIEW: expiration date not identified; confirm if required.","warning");
+  addResult(r,"Lead Time",true,"REVIEW: confirm lead time is stated when required.","warning");
+  addResult(r,"Shipping",true,"REVIEW: confirm shipping method, cost, and conditions.","warning");
+  addResult(r,"Chemical Information",true,"REVIEW: confirm chemical notes or special requirements when applicable.","warning");
+  addResult(r,"Required Information",true,"REVIEW: manually confirm required quote fields and information.","warning");
+  const errors=r.filter(x=>x.ok===false).length;
+  $("resultBanner").className="result "+(errors?"bad":"ok");
+  $("resultBanner").textContent=errors?("QUOTE REVIEW — "+errors+" error(s) identified"): "QUOTE REVIEW COMPLETE — "+r.filter(x=>x.kind==="warning").length+" review item(s); no blocking errors identified.";
+  $("results").innerHTML=r.map(x=>'<div class="audit-row"><div class="name">'+escapeHtml(x.name)+'</div><div>'+escapeHtml(x.detail)+'</div><div class="'+(x.ok?"pass":"fail")+'">'+(x.kind==="warning"?"REVIEW":x.ok?"OK":"ERROR")+'</div></div>').join("");
+  $("suggestions").innerHTML="";
+}
 function runAudit(){
   const d=getData(), r=[], suggestions=[];
+  if($('documentType')?.value==='quote'){runQuoteReview();return;}
   const c=customerKey(d.customer);
   const notesNormalized=normalize(d.notes);
 
