@@ -857,7 +857,7 @@ function runAudit(){
   const fieldServicePickup=pickupChargeItems.length>0;
   // Notes may explicitly confirm that the customer picked up the order at OSI.
   // In that case, a missing outbound Delivery Charge is valid.
-  const pickedUpFromOSI=/\bPICKED\s+UP\s+FROM\s+OSI\b/.test(notesNormalized);
+  const pickedUpFromOSI=/\b(?:PICKED\s+UP\s+FROM\s+OSI|CPU|CUSTOMER\s+PICK\s*UP|CUSTOMER\s+PICKUP)\b/.test(notesNormalized);
   const deliveryItemAmount=deliveryItems.reduce((sum,x)=>sum+(Number(x.amount)||Number(x.price||0)*Number(x.qty||1)),0);
   const deliveryPriceMatch=
     deliveryText.includes("AFTER HOURS") ? RULES.afterHoursDelivery :
