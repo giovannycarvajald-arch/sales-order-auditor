@@ -21,7 +21,7 @@
     <section id="configurationStatus" class="config-status incomplete" aria-live="polite"></section>
     <section class="card hero">
       <h2>1. Upload Document</h2>
-      <label>Document Type <select id="documentType"><option value="so">Sales Order Audit</option><option value="quote">Quote Audit</option></select></label>
+      <div class="document-type-switch"><label for="documentType">SELECT AUDIT TYPE</label><select id="documentType"><option value="so">Sales Order Audit</option><option value="quote">Quote Audit</option></select></div>
       <p>The PDF is processed in your browser. It is not sent to a server for auditing.</p>
       <label class="dropzone" id="dropzone">
         <input id="pdfInput" type="file" accept="application/pdf">
