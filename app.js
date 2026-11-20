@@ -782,9 +782,46 @@ function restoreProcedure(){
   renderConfigurationStatus();
 }
 
+function parseQuote(text){
+  const lines=text.split(/\r?\n/).map(x=>x.replace(/\s+/g," ").trim()).filter(Boolean);
+  const t=lines.join(" ");
+  const q=firstMatch(t,/\bQ\d{5,}\b/i);
+  const dateMatch=t.match(/\b(\d{1,2}\/\d{1,2}\/\d{4})\s+\d{1,2}:\d{2}\s*(?:AM|PM)\b/i);
+  const parties=state.pdfLayout?.[0]?.rows||[];
+  const quoteTo=firstMatch(t,/Quote To:\s*([A-Z0-9 &.,'-]+?)(?=\s+Ship To:)/i);
+  const shipTo=firstMatch(t,/Ship To:\s*([A-Z0-9 &.,'-]+?)(?=\s+\d{1,2}\/\d{1,2}\/\d{4})/i);
+  const shipWell=firstMatch(t,/Ship To:\s*[A-Z0-9 &.,'-]+?\s+([A-Z0-9-]+),\s*(?=\s+\d{1,2}\/)/i);
+  const salesperson=firstMatch(t,/Salesperson:\s*([A-Z][A-Z .'-]+)/i)||firstMatch(t,/Sales Person\s+([A-Z][A-Z .'-]+?)(?=\s+Lead Time|\s+Quote Expires)/i);
+  const subtotal=firstMatch(t,/Subtotal\s+([\d,]+\.\d{2})/i);
+  const tax=firstMatch(t,/Tax\s+([\d,]+\.\d{2})/i);
+  const total=firstMatch(t,/Total\s+([\d,]+\.\d{2})/i);
+  setValue("soNumber",q); setValue("customer",quoteTo); setValue("soldTo",quoteTo); setValue("shipTo",shipTo);
+  setValue("soldToWell",""); setValue("shipToWell",shipWell); setValue("contact",""); setValue("phone","");
+  if(dateMatch){const [m,d,y]=dateMatch[1].split("/");setValue("deliveryDate",y+"-"+m.padStart(2,"0")+"-"+d.padStart(2,"0"));}
+  setValue("deliveryTime","");setValue("deliveryText","");setValue("notes","");
+  state.salesPerson=salesperson||"";
+  setValue("subtotal",parseMoney(subtotal));setValue("tax",parseMoney(tax));setValue("total",parseMoney(total));
+  const itemLines=[];
+  const pnRx=/\b\d{2,4}-\d{4}-\d{2}(?:-\d{2})?\b/g;
+  const matches=[...t.matchAll(pnRx)];
+  matches.forEach((m,i)=>{
+    const next=matches[i+1], seg=t.slice(m.index+m[0].length,next?next.index:t.length);
+    const pricing=seg.match(/(?:^|\s)(\d+(?:\.\d+)?)\s+([\d,]+\.\d{2})\s*\/EA\s+(\d+(?:\.\d+)?)\s+([\d,]+\.\d{2})/);
+    if(!pricing)return;
+    let desc=seg.slice(0,pricing.index).replace(/\b[A-E]\b\s*$/,"").trim();
+    desc=desc.replace(/\s+/g," ");
+    itemLines.push({pn:m[0],desc,qty:Number(pricing[1]),price:Number(pricing[2].replace(/,/g,"")),discount:Number(pricing[3]),amount:Number(pricing[4].replace(/,/g,""))});
+  });
+  $("itemsBody").innerHTML="";state.items=[];
+  itemLines.forEach(x=>addItem(x.pn,x.desc,x.qty,x.price,x.discount));
+  const chem=lines.filter(x=>/^ITEM\s+\d+:/i.test(x)).join(" | ");
+  setValue("notes",chem);
+  $("status").textContent="Quote PDF read: "+itemLines.length+" item(s) detected. Review the fields and run the audit.";
+  $("status").className="status ok";
+}
 async function analyzePDF(){
   $("status").textContent="Reading PDF…"; $("status").className="status";
-  try{ parseSO(await extractPDFText(state.pdfFile)); }
+  try{ const text=await extractPDFText(state.pdfFile); if($("documentType")?.value==="quote") parseQuote(text); else parseSO(text); }
   catch(err){ $("status").textContent="Error reading PDF: "+err.message; $("status").className="status bad"; }
 }
 
