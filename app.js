@@ -828,7 +828,12 @@ function runAudit(){
 
   addResult(r,"TAXES / STAMP / DISCOUNT / EXTRA INFO",true,"Initial review completed. Specific checks are listed below.");
   const sold=customerKey(d.soldTo), ship=customerKey(d.shipTo);
-  const companyOK=!sold||!ship||sold===ship;
+  // Sold To vs Ship To: ignore common legal suffixes and punctuation for this comparison only.
+  const companyComparisonKey=s=>normalize(s)
+    .replace(/[.,&]/g," ")
+    .replace(/\\b(?:LLC|L L C|INC|INCORPORATED|CORP|CORPORATION|CO|COMPANY|LTD|LIMITED|LP|LLP|PLC)\\b/g," ")
+    .replace(/\\s+/g," ").trim();
+  const companyOK=!sold||!ship||sold===ship||companyComparisonKey(d.soldTo)===companyComparisonKey(d.shipTo);
   const wellsOK=!d.soldToWell||!d.shipToWell||normalize(d.soldToWell)===normalize(d.shipToWell);
   const companyDetail=!companyOK
     ? "ERROR: Sold To ("+d.soldTo+") and Ship To ("+d.shipTo+") are different companies. Confirm with the salesperson before approval."
