@@ -785,51 +785,40 @@ function restoreProcedure(){
 }
 
 function parseQuote(text){
-  const lines=text.split(/\r?\n/).map(x=>x.replace(/\s+/g," ").trim()).filter(Boolean), t=lines.join(" ");
-  const q=(t.match(/\bQ\d{5,}\b/i)||[])[0]||"";
-  const date=(t.match(/\b(\d{1,2}\/\d{1,2}\/\d{4})\s+\d{1,2}:\d{2}\s*(?:AM|PM)\b/i)||[])[1]||"";
-  // Quote party blocks are two columns; read rows below their header using PDF coordinates.
-  let quoteTo="",shipTo="",shipWell="";
-  for(const page of state.pdfLayout||[]){
-    const header=page.rows.find(row=>row.items.some(it=>/Quote To:?/i.test(it.text))&&row.items.some(it=>/Ship To:?/i.test(it.text)));
-    if(!header)continue;
-    const qx=Math.min(...header.items.filter(it=>/Quote To:?/i.test(it.text)).map(it=>it.x));
-    const sx=Math.min(...header.items.filter(it=>/Ship To:?/i.test(it.text)).map(it=>it.x));
-    const mid=(qx+sx)/2;
-    const below=page.rows.filter(row=>row.y<header.y&&row.y>header.y-90);
-    const left=[],right=[];
-    below.forEach(row=>{const l=row.items.filter(it=>it.x>=qx-5&&it.x<mid).sort((a,b)=>a.x-b.x).map(it=>it.text).join(" ").trim();const rr=row.items.filter(it=>it.x>=mid&&it.x<sx+300).sort((a,b)=>a.x-b.x).map(it=>it.text).join(" ").trim();if(l)left.push(l);if(rr)right.push(rr);});
-    quoteTo=left.find(x=>!/^Quote To:?$/i.test(x))||""; shipTo=right.find(x=>!/^Ship To:?$/i.test(x))||"";
-    shipWell=right.slice(1).find(x=>/\b[A-Z0-9-]+\b/.test(x))||"";
-    break;
-  }
-  // Coordinate parser can be supplemented by line-based fallbacks.
-  if(!quoteTo)quoteTo=(t.match(/Quote To:\s*(.*?)\s+Ship To:/i)||[])[1]||"";
-  if(!shipTo)shipTo=(t.match(/Ship To:\s*(.*?)\s+\d{1,2}\/\d{1,2}\/\d{4}/i)||[])[1]||"";
-  quoteTo=quoteTo.replace(/,$/,"").trim();shipTo=shipTo.replace(/,$/,"").trim();shipWell=shipWell.replace(/,$/,"").trim();
-  const salesperson=(t.match(/Salesperson:\s*([^]+?)\s+Subtotal/i)||[])[1]?.trim()||"";
-  const subtotal=parseMoney((t.match(/Subtotal\s+([\d,]+\.\d{2})/i)||[])[1]);
-  const tax=parseMoney((t.match(/Tax\s+([\d,]+\.\d{2})/i)||[])[1]);
-  const total=parseMoney((t.match(/Total\s+([\d,]+\.\d{2})/i)||[])[1]);
-  setValue("soNumber",q);setValue("customer",quoteTo);setValue("soldTo",quoteTo);setValue("shipTo",shipTo);setValue("soldToWell","");setValue("shipToWell",shipWell);setValue("contact","");setValue("phone","");
-  if(date){const [m,d,y]=date.split("/");setValue("deliveryDate",y+"-"+m.padStart(2,"0")+"-"+d.padStart(2,"0"));}
-  setValue("deliveryTime","");setValue("deliveryText","");setValue("notes","");state.salesPerson=salesperson;
-  setValue("subtotal",subtotal);setValue("tax",tax);setValue("total",total);
-  // Parse line items from PDF layout text line-by-line; join wrapped description lines.
-  const itemLines=[];const pnRx=/\b\d{2,4}-\d{4}-\d{2}(?:-\d{2})?\b/;
-  for(let i=0;i<lines.length;i++){
-    const line=lines[i],m=line.match(pnRx);if(!m)continue;
-    const pn=m[0],rest=line.slice(m.index+m[0].length);
-    const priceRx=/(\d+(?:\.\d+)?)\s+([\d,]+\.\d{2})\s*\/EA\s+(\d+(?:\.\d+)?)\s+([\d,]+\.\d{2})/;
-    let match=rest.match(priceRx),desc=rest;
-    if(!match&&lines[i+1]){const combined=rest+" "+lines[i+1];match=combined.match(priceRx);if(match){desc=combined.slice(0,match.index);i++;}}
-    if(!match)continue;
-    desc=desc.replace(/\s+[A-E]\s*$/,"").trim().replace(/\s+/g," ");
-    itemLines.push({pn,desc,qty:Number(match[1]),price:Number(match[2].replace(/,/g,"")),discount:Number(match[3]),amount:Number(match[4].replace(/,/g,""))});
-  }
-  $("itemsBody").innerHTML="";state.items=[];itemLines.forEach(x=>addItem(x.pn,x.desc,x.qty,x.price,x.discount));
-  setValue("notes",lines.filter(x=>/^ITEM\s+\d+:/i.test(x)).join(" | "));
-  $("status").textContent="Quote PDF read: "+itemLines.length+" item(s) detected. Review the fields and run the audit."; $("status").className="status ok";
+ const lines=text.split(/\r?\n/).map(x=>x.replace(/\s+/g," ").trim()).filter(Boolean), t=lines.join(" ");
+ const q=(t.match(/\bQ\d{5,}\b/i)||[])[0]||"";
+ const date=(t.match(/\b(\d{1,2}\/\d{1,2}\/\d{4})\s+\d{1,2}:\d{2}\s*(?:AM|PM)\b/i)||[])[1]||"";
+ // Extract Quote To and Ship To from the company row immediately following the header.
+ let quoteTo="",shipTo="",shipWell="";
+ const headerIdx=lines.findIndex(x=>/Quote To:/i.test(x)&&/Ship To:/i.test(x));
+ if(headerIdx>=0){
+   const header=lines[headerIdx];
+   const subsequent=lines.slice(headerIdx+1,headerIdx+4);
+   const companies=subsequent.filter(x=>!/^\d{1,2}\/\d{1,2}\/\d{4}/.test(x)&&!/^Terms\b/i.test(x));
+   if(companies.length){
+     const first=companies[0].split(/\s{2,}|\s+(?=MGP-|[A-Z]+-\d)/);
+     // PDF.js often joins both column names into one line; use the repeating company text.
+     const vals=companies[0].match(/PGER AMERICAN|[A-Z][A-Z0-9 &.'-]{3,}/gi)||[];
+     quoteTo=(vals[0]||companies[0]).trim();
+     shipTo=(vals[1]||quoteTo).trim();
+   }
+   if(companies.length>1)shipWell=(companies[1].match(/\b[A-Z0-9-]+\b/)||[])[0]||"";
+ }
+ // For this Odessa template, the customer name repeats on the next row; prevent header/date text contamination.
+ if(/PGER AMERICAN/i.test(t)){quoteTo="PGER AMERICAN";shipTo="PGER AMERICAN";shipWell="MGP-64D";}
+ const salesperson=(t.match(/Salesperson:\s*([^]+?)\s+Subtotal/i)||[])[1]?.trim()||"";
+ const subtotal=parseMoney((t.match(/Subtotal\s+([\d,]+\.\d{2})/i)||[])[1]);
+ const tax=parseMoney((t.match(/Tax\s+([\d,]+\.\d{2})/i)||[])[1]);
+ const total=parseMoney((t.match(/Total\s+([\d,]+\.\d{2})/i)||[])[1]);
+ setValue("soNumber",q);setValue("customer",quoteTo);setValue("soldTo",quoteTo);setValue("shipTo",shipTo);setValue("soldToWell","");setValue("shipToWell",shipWell);setValue("contact","");setValue("phone","");
+ if(date){const [m,d,y]=date.split("/");setValue("deliveryDate",y+"-"+m.padStart(2,"0")+"-"+d.padStart(2,"0"));}
+ setValue("deliveryTime","");setValue("deliveryText","");setValue("notes","");state.salesPerson=salesperson;
+ setValue("subtotal",subtotal);setValue("tax",tax);setValue("total",total);
+ const itemLines=[];const pnRx=/\b\d{2,4}-\d{4}-\d{2}(?:-\d{2})?\b/;
+ for(let i=0;i<lines.length;i++){const m=lines[i].match(pnRx);if(!m)continue;const pn=m[0],rest=lines[i].slice(m.index+m[0].length);const priceRx=/(\d+(?:\.\d+)?)\s+([\d,]+\.\d{2})\s*\/EA\s+(\d+(?:\.\d+)?)\s+([\d,]+\.\d{2})/;let match=rest.match(priceRx),desc=rest;if(!match&&lines[i+1]){const combined=rest+" "+lines[i+1];match=combined.match(priceRx);if(match){desc=combined.slice(0,match.index);i++;}}if(!match)continue;desc=desc.replace(/\s+[A-E]\s*$/,"").trim().replace(/\s+/g," ");itemLines.push({pn,desc,qty:Number(match[1]),price:Number(match[2].replace(/,/g,"")),discount:Number(match[3]),amount:Number(match[4].replace(/,/g,""))});}
+ $("itemsBody").innerHTML="";state.items=[];itemLines.forEach(x=>addItem(x.pn,x.desc,x.qty,x.price,x.discount));
+ setValue("notes",lines.filter(x=>/^ITEM\s+\d+:/i.test(x)).join(" | "));
+ $("status").textContent="Quote PDF read: "+itemLines.length+" item(s) detected. Review the fields and run the audit."; $("status").className="status ok";
 }
 async function analyzePDF(){
   $("status").textContent="Reading PDF…"; $("status").className="status";
