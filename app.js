@@ -785,41 +785,51 @@ function restoreProcedure(){
 }
 
 function parseQuote(text){
-  const lines=text.split(/\r?\n/).map(x=>x.replace(/\s+/g," ").trim()).filter(Boolean);
-  const t=lines.join(" ");
-  const q=firstMatch(t,/\bQ\d{5,}\b/i);
-  const dateMatch=t.match(/\b(\d{1,2}\/\d{1,2}\/\d{4})\s+\d{1,2}:\d{2}\s*(?:AM|PM)\b/i);
-  const parties=state.pdfLayout?.[0]?.rows||[];
-  const quoteTo=firstMatch(t,/Quote To:\s*([A-Z0-9 &.,'-]+?)(?=\s+Ship To:)/i);
-  const shipTo=firstMatch(t,/Ship To:\s*([A-Z0-9 &.,'-]+?)(?=\s+\d{1,2}\/\d{1,2}\/\d{4})/i);
-  const shipWell=firstMatch(t,/Ship To:\s*[A-Z0-9 &.,'-]+?\s+([A-Z0-9-]+),\s*(?=\s+\d{1,2}\/)/i);
-  const salesperson=firstMatch(t,/Salesperson:\s*([A-Z][A-Z .'-]+)/i)||firstMatch(t,/Sales Person\s+([A-Z][A-Z .'-]+?)(?=\s+Lead Time|\s+Quote Expires)/i);
-  const subtotal=firstMatch(t,/Subtotal\s+([\d,]+\.\d{2})/i);
-  const tax=firstMatch(t,/Tax\s+([\d,]+\.\d{2})/i);
-  const total=firstMatch(t,/Total\s+([\d,]+\.\d{2})/i);
-  setValue("soNumber",q); setValue("customer",quoteTo); setValue("soldTo",quoteTo); setValue("shipTo",shipTo);
-  setValue("soldToWell",""); setValue("shipToWell",shipWell); setValue("contact",""); setValue("phone","");
-  if(dateMatch){const [m,d,y]=dateMatch[1].split("/");setValue("deliveryDate",y+"-"+m.padStart(2,"0")+"-"+d.padStart(2,"0"));}
-  setValue("deliveryTime","");setValue("deliveryText","");setValue("notes","");
-  state.salesPerson=salesperson||"";
-  setValue("subtotal",parseMoney(subtotal));setValue("tax",parseMoney(tax));setValue("total",parseMoney(total));
-  const itemLines=[];
-  const pnRx=/\b\d{2,4}-\d{4}-\d{2}(?:-\d{2})?\b/g;
-  const matches=[...t.matchAll(pnRx)];
-  matches.forEach((m,i)=>{
-    const next=matches[i+1], seg=t.slice(m.index+m[0].length,next?next.index:t.length);
-    const pricing=seg.match(/(?:^|\s)(\d+(?:\.\d+)?)\s+([\d,]+\.\d{2})\s*\/EA\s+(\d+(?:\.\d+)?)\s+([\d,]+\.\d{2})/);
-    if(!pricing)return;
-    let desc=seg.slice(0,pricing.index).replace(/\b[A-E]\b\s*$/,"").trim();
-    desc=desc.replace(/\s+/g," ");
-    itemLines.push({pn:m[0],desc,qty:Number(pricing[1]),price:Number(pricing[2].replace(/,/g,"")),discount:Number(pricing[3]),amount:Number(pricing[4].replace(/,/g,""))});
-  });
-  $("itemsBody").innerHTML="";state.items=[];
-  itemLines.forEach(x=>addItem(x.pn,x.desc,x.qty,x.price,x.discount));
-  const chem=lines.filter(x=>/^ITEM\s+\d+:/i.test(x)).join(" | ");
-  setValue("notes",chem);
-  $("status").textContent="Quote PDF read: "+itemLines.length+" item(s) detected. Review the fields and run the audit.";
-  $("status").className="status ok";
+  const lines=text.split(/\r?\n/).map(x=>x.replace(/\s+/g," ").trim()).filter(Boolean), t=lines.join(" ");
+  const q=(t.match(/\bQ\d{5,}\b/i)||[])[0]||"";
+  const date=(t.match(/\b(\d{1,2}\/\d{1,2}\/\d{4})\s+\d{1,2}:\d{2}\s*(?:AM|PM)\b/i)||[])[1]||"";
+  // Quote party blocks are two columns; read rows below their header using PDF coordinates.
+  let quoteTo="",shipTo="",shipWell="";
+  for(const page of state.pdfLayout||[]){
+    const header=page.rows.find(row=>row.items.some(it=>/Quote To:?/i.test(it.text))&&row.items.some(it=>/Ship To:?/i.test(it.text)));
+    if(!header)continue;
+    const qx=Math.min(...header.items.filter(it=>/Quote To:?/i.test(it.text)).map(it=>it.x));
+    const sx=Math.min(...header.items.filter(it=>/Ship To:?/i.test(it.text)).map(it=>it.x));
+    const mid=(qx+sx)/2;
+    const below=page.rows.filter(row=>row.y<header.y&&row.y>header.y-90);
+    const left=[],right=[];
+    below.forEach(row=>{const l=row.items.filter(it=>it.x>=qx-5&&it.x<mid).sort((a,b)=>a.x-b.x).map(it=>it.text).join(" ").trim();const rr=row.items.filter(it=>it.x>=mid&&it.x<sx+300).sort((a,b)=>a.x-b.x).map(it=>it.text).join(" ").trim();if(l)left.push(l);if(rr)right.push(rr);});
+    quoteTo=left.find(x=>!/^Quote To:?$/i.test(x))||""; shipTo=right.find(x=>!/^Ship To:?$/i.test(x))||"";
+    shipWell=right.slice(1).find(x=>/\b[A-Z0-9-]+\b/.test(x))||"";
+    break;
+  }
+  // Coordinate parser can be supplemented by line-based fallbacks.
+  if(!quoteTo)quoteTo=(t.match(/Quote To:\s*(.*?)\s+Ship To:/i)||[])[1]||"";
+  if(!shipTo)shipTo=(t.match(/Ship To:\s*(.*?)\s+\d{1,2}\/\d{1,2}\/\d{4}/i)||[])[1]||"";
+  quoteTo=quoteTo.replace(/,$/,"").trim();shipTo=shipTo.replace(/,$/,"").trim();shipWell=shipWell.replace(/,$/,"").trim();
+  const salesperson=(t.match(/Salesperson:\s*([^]+?)\s+Subtotal/i)||[])[1]?.trim()||"";
+  const subtotal=parseMoney((t.match(/Subtotal\s+([\d,]+\.\d{2})/i)||[])[1]);
+  const tax=parseMoney((t.match(/Tax\s+([\d,]+\.\d{2})/i)||[])[1]);
+  const total=parseMoney((t.match(/Total\s+([\d,]+\.\d{2})/i)||[])[1]);
+  setValue("soNumber",q);setValue("customer",quoteTo);setValue("soldTo",quoteTo);setValue("shipTo",shipTo);setValue("soldToWell","");setValue("shipToWell",shipWell);setValue("contact","");setValue("phone","");
+  if(date){const [m,d,y]=date.split("/");setValue("deliveryDate",y+"-"+m.padStart(2,"0")+"-"+d.padStart(2,"0"));}
+  setValue("deliveryTime","");setValue("deliveryText","");setValue("notes","");state.salesPerson=salesperson;
+  setValue("subtotal",subtotal);setValue("tax",tax);setValue("total",total);
+  // Parse line items from PDF layout text line-by-line; join wrapped description lines.
+  const itemLines=[];const pnRx=/\b\d{2,4}-\d{4}-\d{2}(?:-\d{2})?\b/;
+  for(let i=0;i<lines.length;i++){
+    const line=lines[i],m=line.match(pnRx);if(!m)continue;
+    const pn=m[0],rest=line.slice(m.index+m[0].length);
+    const priceRx=/(\d+(?:\.\d+)?)\s+([\d,]+\.\d{2})\s*\/EA\s+(\d+(?:\.\d+)?)\s+([\d,]+\.\d{2})/;
+    let match=rest.match(priceRx),desc=rest;
+    if(!match&&lines[i+1]){const combined=rest+" "+lines[i+1];match=combined.match(priceRx);if(match){desc=combined.slice(0,match.index);i++;}}
+    if(!match)continue;
+    desc=desc.replace(/\s+[A-E]\s*$/,"").trim().replace(/\s+/g," ");
+    itemLines.push({pn,desc,qty:Number(match[1]),price:Number(match[2].replace(/,/g,"")),discount:Number(match[3]),amount:Number(match[4].replace(/,/g,""))});
+  }
+  $("itemsBody").innerHTML="";state.items=[];itemLines.forEach(x=>addItem(x.pn,x.desc,x.qty,x.price,x.discount));
+  setValue("notes",lines.filter(x=>/^ITEM\s+\d+:/i.test(x)).join(" | "));
+  $("status").textContent="Quote PDF read: "+itemLines.length+" item(s) detected. Review the fields and run the audit."; $("status").className="status ok";
 }
 async function analyzePDF(){
   $("status").textContent="Reading PDF…"; $("status").className="status";
