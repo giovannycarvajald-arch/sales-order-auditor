@@ -20,7 +20,8 @@
   <main class="container">
     <section id="configurationStatus" class="config-status incomplete" aria-live="polite"></section>
     <section class="card hero">
-      <h2>1. Upload Sales Order</h2>
+      <h2>1. Upload Document</h2>
+      <label>Document Type <select id="documentType"><option value="so">Sales Order Audit</option><option value="quote">Quote Audit</option></select></label>
       <p>The PDF is processed in your browser. It is not sent to a server for auditing.</p>
       <label class="dropzone" id="dropzone">
         <input id="pdfInput" type="file" accept="application/pdf">
@@ -30,7 +31,7 @@
       </label>
       <div class="file-row">
         <span id="fileName">No PDF selected</span>
-        <button id="analyzeBtn" class="primary" disabled>🔍 Analyze SO</button>
+        <button id="analyzeBtn" class="primary" disabled>🔍 Analyze Document</button>
       </div>
       <div id="status" class="status"></div>
     </section>
@@ -85,7 +86,7 @@
     <section class="card">
       <div class="section-title">
         <div>
-          <h2>4. Sales Order Procedure</h2>
+          <h2 id="procedureHeading">4. Sales Order Procedure</h2>
           <p>Upload the current Procedure PDF. The app automatically extracts the TAXABLE, STAMP, and DISCOUNT lists from the section on page 17 and stores them locally.</p>
         </div>
         <label class="file-button">📘 Upload Procedure<input id="procedureInput" type="file" accept="application/pdf"></label>
