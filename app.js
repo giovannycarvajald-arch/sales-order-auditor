@@ -867,6 +867,27 @@ function runQuoteReview(){
     addResult(r,"Unit Prices vs Excel",priceIssues.length===0,priceIssues.length?priceIssues.join(" | "):"Recognized item unit prices match the uploaded Price List.");
     if(unknown.length)addResult(r,"Special / unlisted part numbers",true,"REVIEW: not found in Price List: "+[...new Set(unknown)].join(", "),"warning");
   }else addResult(r,"Unit Prices vs Excel",true,"REVIEW: Price List not uploaded; manually verify quote unit prices.","warning");
+  // Quote discount audit: validate customer discount rules from the uploaded Procedure,
+  // and independently verify that discounts are mathematically applied to line values.
+  const quoteDiscountRule=state.procedureRules?findProcedureDiscount(d.customer||d.soldTo):null;
+  if(quoteDiscountRule){
+    const discountProblems=[];
+    d.items.forEach(x=>{
+      if(Math.abs((x.discount||0)-quoteDiscountRule.percent)>0.01)
+        discountProblems.push(x.pn+": discount "+(x.discount||0)+"% vs company-required "+quoteDiscountRule.percent+"%");
+    });
+    addResult(r,"Company Discount",discountProblems.length===0,
+      discountProblems.length?discountProblems.join(" | "):"Procedure: "+(d.customer||d.soldTo)+" requires "+quoteDiscountRule.percent+"% discount; all quote lines match.");
+  }else if(state.procedureRules){
+    addResult(r,"Company Discount",true,
+      "REVIEW: no discount rule found for "+(d.customer||d.soldTo)+" in uploaded Procedure. Confirm whether a discount applies.","warning");
+  }else{
+    addResult(r,"Company Discount",true,"REVIEW: upload current Procedure to verify whether this company has an authorized discount.","warning");
+  }
+  const discountMathIssues=d.items.filter(x=>Number(x.discount||0)<0||Number(x.discount||0)>100);
+  addResult(r,"Discount Application",discountMathIssues.length===0,
+    discountMathIssues.length?"ERROR: invalid discount percentage on "+discountMathIssues.map(x=>x.pn).join(", "):
+    "Discount percentages are within valid range. Extended values and subtotal are checked using quantity × unit price × (1 − discount%).");
   const calc=d.items.reduce((sum,x)=>sum+(x.qty*x.price*(1-(x.discount||0)/100)),0);
   addResult(r,"Extended Price / Subtotal",Math.abs(calc-d.subtotal)<=0.02,
     Math.abs(calc-d.subtotal)<=0.02 ? "Line extensions and subtotal appear consistent." : "ERROR: calculated line-item sum "+money(calc)+" differs from entered subtotal "+money(d.subtotal)+".");
