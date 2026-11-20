@@ -37,7 +37,7 @@ $("dropzone").addEventListener("drop", e => {
   }
 });
 $("analyzeBtn").onclick = analyzePDF;
-$("documentType").addEventListener("change",()=>{ const q=$("documentType").value==="quote"; const labels=document.querySelectorAll(".fields label"); if(labels[0]) labels[0].childNodes[0].textContent=q?"Quote Number":"SO Number"; if(labels[8]) labels[8].childNodes[0].textContent=q?"Quote Date":"Delivery Date"; if(labels[9]) labels[9].childNodes[0].textContent=q?"Quote Expiration":"Delivery Time"; if(labels[10]) labels[10].childNodes[0].textContent=q?"Shipping":"Delivery Text"; $("procedureHeading").textContent=q?"4. Quote Review":"4. Sales Order Procedure"; });
+$("documentType").addEventListener("change",()=>{ const q=$("documentType").value==="quote"; const labelFor=id=>$(id).closest("label"); $("soNumber").closest("label").childNodes[0].textContent=q?"Quote Number":"SO Number"; $("soldTo").closest("label").childNodes[0].textContent=q?"Quote To":"Sold To"; $("deliveryDate").closest("label").childNodes[0].textContent=q?"Quote Date":"Delivery Date"; $("deliveryTime").closest("label").childNodes[0].textContent=q?"Quote Expiration":"Delivery Time"; $("deliveryText").closest("label").childNodes[0].textContent=q?"Shipping":"Delivery Text"; ["contact","phone"].forEach(id=>{labelFor(id).style.display=q?"none":"";}); $("procedureHeading").textContent=q?"4. Quote Review":"4. Sales Order Procedure"; });
 $("documentType").dispatchEvent(new Event("change"));
 $("auditBtn").onclick = runAudit;
 $("addItemBtn").onclick = () => addItem();
