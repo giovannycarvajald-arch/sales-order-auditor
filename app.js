@@ -148,7 +148,7 @@ function columnBlockFromLayout(label){
           ? it.x >= soldX-10 && it.x < midpoint
           : it.x >= midpoint && it.x < (shipX+330);
       }).sort((a,b)=>a.x-b.x).map(it=>it.text);
-      return {y:r.y,text:texts.join(" ").replace(/\\s+/g," ").trim()};
+      return {y:r.y,text:texts.join(" ").replace(/\s+/g," ").trim()};
     })
     .filter(r=>r.text);
   return rows;
@@ -168,7 +168,7 @@ function extractShipWellDirect(){
         text:r.items
           .filter(it=>it.x>=shipX-8 && it.x<610)
           .sort((a,b)=>a.x-b.x)
-          .map(it=>it.text).join(" ").replace(/\\s+/g," ").trim()
+          .map(it=>it.text).join(" ").replace(/\s+/g," ").trim()
       }))
       .filter(r=>r.text);
     let companySeen=false;
@@ -178,7 +178,7 @@ function extractShipWellDirect(){
       if(!companySeen){
         companySeen=true;
         // Sometimes PDF.js combines the company and well into one text row.
-        const combined=candidate.match(/^(?:APACHE|XTO ENERGY INC|PIONEER(?: NATURAL RESOURCES)?|OCCIDENTAL PERMIAN)\\s+(.+\\d[^,]*)[,]?$/i);
+        const combined=candidate.match(/^(?:APACHE|XTO ENERGY INC|PIONEER(?: NATURAL RESOURCES)?|OCCIDENTAL PERMIAN)\s+(.+\\d[^,]*)[,]?$/i);
         if(combined && looksLikeWell(combined[1])) return combined[1].trim();
         continue;
       }
@@ -269,7 +269,7 @@ function extractCompanyAndWell(label, fallbackText){
   const lab=label.replace(/\s+/g," ");
   const other=label.toLowerCase()==="sold to" ? "Ship To" : "(?:Delivery Ticket|Odessa Separator Inc|Shipping Method)";
   const flat=raw.replace(/\s+/g," ");
-  const rx=new RegExp(lab+"\\s*:?\\s*(.{2,160}?)(?=\\s+"+other+")","i");
+  const rx=new RegExp(lab+"\s*:?\s*(.{2,160}?)(?=\s+"+other+")","i");
   const m=flat.match(rx);
   if(m){
     const chunk=cleanPartyLine(m[1]);
@@ -831,8 +831,8 @@ function runAudit(){
   // Sold To vs Ship To: ignore common legal suffixes and punctuation for this comparison only.
   const companyComparisonKey=s=>normalize(s)
     .replace(/[.,&]/g," ")
-    .replace(/\\b(?:LLC|L L C|INC|INCORPORATED|CORP|CORPORATION|CO|COMPANY|LTD|LIMITED|LP|LLP|PLC)\\b/g," ")
-    .replace(/\\s+/g," ").trim();
+    .replace(/\b(?:LLC|L L C|INC|INCORPORATED|CORP|CORPORATION|CO|COMPANY|LTD|LIMITED|LP|LLP|PLC)\b/g," ")
+    .replace(/\s+/g," ").trim();
   const companyOK=!sold||!ship||sold===ship||companyComparisonKey(d.soldTo)===companyComparisonKey(d.shipTo);
   const wellsOK=!d.soldToWell||!d.shipToWell||normalize(d.soldToWell)===normalize(d.shipToWell);
   const companyDetail=!companyOK
@@ -916,7 +916,7 @@ function runAudit(){
   // inventory and refurbishment-related orders.
   const inspectionNoteKeywords=["FROM CONSIGNMENT","REFURBISHMENT","REFURBISH","COI","REFURB"];
   const inspectionNoteMatches=inspectionNoteKeywords.filter(keyword=>
-    new RegExp("\\b"+keyword+"\\b").test(notesNormalized)
+    new RegExp("\b"+keyword+"\b").test(notesNormalized)
   );
   const inspectionNoteTrigger=inspectionNoteMatches.length>0;
   const hasInspection=d.items.some(x=>
